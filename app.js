@@ -413,4 +413,32 @@ $("todayLabel").textContent=dateLabel();
 updateFields();renderCurrent();renderHistory();renderExerciseOptions();updateSyncStatus();
 loadDriveSessions(false).finally(()=>retryPendingSync());
 
-if("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js");
+if ("serviceWorker" in navigator) {
+  let reloadingForUpdate = false;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
+
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("service-worker.js", {
+        updateViaCache: "none"
+      });
+
+      // 앱을 열 때마다 새 서비스워커가 있는지 확인합니다.
+      await registration.update();
+
+      // 백그라운드에서 오래 열어둔 경우에도 주기적으로 업데이트를 확인합니다.
+      window.setInterval(() => registration.update(), 60 * 60 * 1000);
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") registration.update();
+      });
+    } catch (error) {
+      console.warn("서비스워커 등록 또는 업데이트 확인 실패:", error);
+    }
+  });
+}

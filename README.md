@@ -37,5 +37,3 @@ https://script.google.com/macros/s/AKfycbxsQLOyMwtGe2lM8oTl6ABjH_WKM1ko2OUKPy0Nj
 압축파일의 웹 파일을 기존 GitHub 저장소에 덮어쓰세요.
 
 업데이트 전 현재 앱의 `전체 내보내기`로 로컬 기록을 백업하는 것을 권장합니다.
-
-test
