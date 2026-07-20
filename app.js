@@ -264,9 +264,11 @@ function renderHistory(){
           <div class="item-meta">${s.exercises.length}종목 · ${s.exercises.map(e=>escapeHtml(e.exercise)).join(", ")}</div>
         </div>
       </div>
-      <button data-load="${i}" class="load-btn">오늘 운동으로 불러오기</button>
-      <button data-export="${i}" class="secondary">JSON 내보내기</button>
-      <button data-delete-session="${i}" class="delete-btn">Drive에서 삭제</button>
+      <div class="history-button-row">
+        <button data-load="${i}" class="load-btn">오늘로 불러오기</button>
+        <button data-export="${i}" class="secondary">내보내기</button>
+        <button data-delete-session="${i}" class="delete-btn">Drive 삭제</button>
+      </div>
     </article>`;
   }).join("");
 
@@ -498,6 +500,9 @@ if ("serviceWorker" in navigator) {
 const analysisState={latest:null,running:false};
 function formatMetric(v,suffix=''){return v===null||v===undefined?'자료 없음':`${v}${suffix}`;}
 function listHtml(items){return (items&&items.length)?`<ul class="analysis-list">${items.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul>`:'<p>특이사항 없음</p>';}
+function analysisSection(title, content, open=false){
+  return `<details class="analysis-block"${open?' open':''}><summary>${escapeHtml(title)}</summary><div class="analysis-body">${content}</div></details>`;
+}
 function renderLatestAnalysis(analysis){
   analysisState.latest=analysis||null;
   if(!analysis){$("analysisBadge").textContent='분석 없음';$("analysisResult").innerHTML='<div class="empty">저장된 AI 분석이 없습니다.</div>';return;}
@@ -506,11 +511,11 @@ function renderLatestAnalysis(analysis){
   const sessions=(p.sessions||[]).map(s=>`<div class="plan-session"><strong>${escapeHtml(s.day_label)} · ${escapeHtml(s.focus)}</strong>${(s.exercises||[]).map(ex=>`<div class="plan-exercise">${escapeHtml(ex.exercise)} · ${ex.sets}세트${ex.reps?` × ${ex.reps}회`:''}${ex.seconds?` × ${ex.seconds}초`:''}${ex.suggested_weight_kg!==null&&ex.suggested_weight_kg!==undefined?` · ${ex.suggested_weight_kg}kg`:''}${ex.target_rpe?` · RPE ${ex.target_rpe}`:''}<br>${escapeHtml(ex.reason||'')}</div>`).join('')}</div>`).join('');
   $("analysisResult").innerHTML=`
     <div class="analysis-meta">분석기간: ${escapeHtml(analysis.period?.from||'')} ~ ${escapeHtml(analysis.period?.to||'')}<br>추가 요청: ${escapeHtml(analysis.additional_request||'없음')}</div>
-    <div class="analysis-block"><h3>현재 수치</h3><p>체중 ${formatMetric(body.weight_latest_kg,'kg')} · 변화 ${formatMetric(body.weight_change_kg,'kg')}<br>일평균 걸음 ${formatMetric(activity.steps_daily_average,'걸음')} · 운동 ${formatMetric(stats.fitness?.total_minutes,'분')}<br>근력 ${formatMetric(strength.session_count,'회')} · 볼륨 ${formatMetric(strength.total_volume_kg,'kg')}</p></div>
-    <div class="analysis-block"><h3>운동 현황</h3><p>${escapeHtml(a.summary||'')}</p>${listHtml(a.progress)}${listHtml(a.concerns)}<p><strong>회복:</strong> ${escapeHtml(a.recovery_status||'')}</p><p><strong>균형:</strong> ${escapeHtml(a.training_balance||'')}</p></div>
-    <div class="analysis-block"><h3>체중감량 분석</h3><p>${escapeHtml(w.summary||'')}</p><p><strong>체중 추세:</strong> ${escapeHtml(w.weight_trend||'')}</p><p><strong>활동량:</strong> ${escapeHtml(w.activity_assessment||'')}</p>${listHtml(w.weekly_targets)}${listHtml(w.limitations)}</div>
-    <div class="analysis-block"><h3>다음 7일 계획</h3><p>${escapeHtml(p.weekly_goal||'')}</p>${sessions||'<p>생성된 세션이 없습니다.</p>'}${listHtml(p.progression_rules)}${listHtml(p.pain_rules)}</div>
-    ${analysis.warnings?.length?`<div class="analysis-block"><h3>주의사항</h3>${listHtml(analysis.warnings)}</div>`:''}`;
+    ${analysisSection('현재 수치', `<p>체중 ${formatMetric(body.weight_latest_kg,'kg')} · 변화 ${formatMetric(body.weight_change_kg,'kg')}<br>일평균 걸음 ${formatMetric(activity.steps_daily_average,'걸음')} · 운동 ${formatMetric(stats.fitness?.total_minutes,'분')}<br>근력 ${formatMetric(strength.session_count,'회')} · 볼륨 ${formatMetric(strength.total_volume_kg,'kg')}</p>`, true)}
+    ${analysisSection('운동 현황', `<p>${escapeHtml(a.summary||'')}</p>${listHtml(a.progress)}${listHtml(a.concerns)}<p><strong>회복:</strong> ${escapeHtml(a.recovery_status||'')}</p><p><strong>균형:</strong> ${escapeHtml(a.training_balance||'')}</p>`)}
+    ${analysisSection('체중감량 분석', `<p>${escapeHtml(w.summary||'')}</p><p><strong>체중 추세:</strong> ${escapeHtml(w.weight_trend||'')}</p><p><strong>활동량:</strong> ${escapeHtml(w.activity_assessment||'')}</p>${listHtml(w.weekly_targets)}${listHtml(w.limitations)}`)}
+    ${analysisSection('다음 7일 계획', `<p>${escapeHtml(p.weekly_goal||'')}</p>${sessions||'<p>생성된 세션이 없습니다.</p>'}${listHtml(p.progression_rules)}${listHtml(p.pain_rules)}`)}
+    ${analysis.warnings?.length?analysisSection('주의사항', listHtml(analysis.warnings)):''}`;
 }
 async function loadLatestAnalysis(showMessage=true){
   const url=getGasUrl(); if(!url)return;
