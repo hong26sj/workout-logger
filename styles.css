@@ -33,7 +33,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .item-title{font-weight:800}.item-meta{margin-top:5px;color:var(--muted);font-size:13px;line-height:1.45}
 .delete-btn{background:#fee2e2;color:var(--danger);padding:7px 9px;font-size:12px}
 .actions{margin-top:10px}
-.history-item button{margin-top:10px;width:auto;padding:8px 10px;font-size:12px}
+.history-item button{margin-top:0;width:auto;padding:8px 10px;font-size:12px}
 dialog{border:0;border-radius:18px;padding:0;width:min(92vw,520px)}
 dialog::backdrop{background:rgba(0,0,0,.35)}
 .dialog-card{padding:18px}
@@ -58,6 +58,11 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 .ai-card{border-color:#dbeafe}
 .analysis-result{margin-top:12px}
 .analysis-block{border-top:1px solid var(--line);padding-top:13px;margin-top:13px}
+.analysis-block summary{font-size:15px;font-weight:900;list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.analysis-block summary::-webkit-details-marker{display:none}
+.analysis-block summary::after{content:"펼치기";font-size:11px;font-weight:800;color:var(--muted);background:#eef0f3;border-radius:999px;padding:4px 8px;white-space:nowrap}
+.analysis-block[open] summary::after{content:"접기"}
+.analysis-body{margin-top:8px}
 .analysis-block h3{font-size:15px;margin:0 0 8px}
 .analysis-block p{font-size:13px;line-height:1.65;margin:6px 0;color:#374151;white-space:pre-wrap}
 .analysis-list{margin:7px 0 0;padding-left:20px;color:#374151;font-size:13px;line-height:1.6}
@@ -72,13 +77,28 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 
 #workoutDate{font-size:1rem;font-weight:600;}
 
-/* 운동일자 입력칸은 모바일에서도 과도하게 넓어지지 않도록 제한 */
 #workoutDate{
   display:block;
-  width:min(100%, 230px);
+  width:100%;
+  max-width:none;
   min-height:48px;
   padding:10px 12px;
   font-size:1rem;
   font-weight:600;
   text-align:left;
+}
+
+.history-button-row{
+  display:flex;
+  gap:6px;
+  align-items:center;
+  margin-top:10px;
+}
+
+.history-button-row button{
+  flex:1 1 0;
+  min-width:0;
+  white-space:nowrap;
+  padding:8px 6px;
+  font-size:12px;
 }
