@@ -84,6 +84,22 @@
       </div>
     </section>
 
+
+    <section class="card ai-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">OPENAI COACH</p>
+          <h2>AI 운동·체중감량 분석</h2>
+        </div>
+        <span id="analysisBadge" class="badge">분석 없음</span>
+      </div>
+      <p class="help">버튼을 누를 때만 Health, Fitness, 근력운동 기록을 분석하고 Drive에 별도 JSON으로 저장합니다.</p>
+      <button id="runAnalysisBtn" class="primary">AI 분석 실행</button>
+      <button id="refreshAnalysisBtn" class="secondary">마지막 분석 불러오기</button>
+      <div id="analysisStatus" class="sync-status"></div>
+      <div id="analysisResult" class="analysis-result"><div class="empty">저장된 AI 분석이 없습니다.</div></div>
+    </section>
+
     <section class="card">
       <div class="section-head">
         <h2>최근 기록</h2>
@@ -110,6 +126,23 @@
       <p class="help">기본 URL이 앱에 내장되어 있습니다. 주소가 변경된 경우에만 수정하세요.</p>
       <div class="actions">
         <button id="saveSettingsBtn" value="default" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="analysisDialog">
+    <form method="dialog" class="dialog-card" id="analysisForm">
+      <div class="section-head">
+        <h2>AI 분석 추가 요청</h2>
+        <button value="cancel" class="icon-btn">✕</button>
+      </div>
+      <p class="help">비워두면 기본 분석을 실행합니다. 기존 분석에 이어 특별히 반영할 내용을 입력할 수 있습니다.</p>
+      <label>추가 요청사항<textarea id="analysisRequest" rows="5" placeholder="예: 이번 주는 허리 회복을 우선하고, 체중감량을 위한 유산소 계획을 자세히 세워줘."></textarea></label>
+      <label class="check-label"><input id="forceAnalysis" type="checkbox" /> 새 기록이 없어도 다시 분석</label>
+      <div class="actions dialog-actions">
+        <button value="cancel" class="secondary">취소</button>
+        <button id="confirmAnalysisBtn" value="default" class="primary">분석 시작</button>
       </div>
     </form>
   </dialog>
