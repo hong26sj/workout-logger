@@ -7,10 +7,15 @@ function getGasUrl(){
 }
 const state = {
   current: [],
-  sessions: JSON.parse(localStorage.getItem("workoutSessions") || "[]"),
-  pendingSync: JSON.parse(localStorage.getItem("pendingSync") || "[]"),
+  sessions: [],
+  pendingSync: [],
   editingIndex: null
 };
+
+// 최근 기록은 Google Drive를 단일 원본으로 사용합니다.
+// 이전 버전에서 아이폰 localStorage에 남긴 기록은 화면 중복을 막기 위해 제거합니다.
+localStorage.removeItem("workoutSessions");
+localStorage.removeItem("pendingSync");
 
 const DEFAULT_EXERCISES = [
   "체스트프레스","벤치프레스","인클라인 체스트프레스","푸쉬업",
@@ -96,9 +101,6 @@ function updateSyncStatus(){
   if(!getGasUrl()){
     el.className="sync-status status-warn";
     el.textContent="Google Drive URL이 설정되지 않았습니다.";
-  }else if(state.pendingSync.length){
-    el.className="sync-status status-warn";
-    el.textContent=`Drive 재전송 대기 ${state.pendingSync.length}건`;
   }else{
     el.className="sync-status status-ok";
     el.textContent="Google Drive 연동 설정됨";
@@ -264,6 +266,7 @@ function renderHistory(){
       </div>
       <button data-load="${i}" class="load-btn">오늘 운동으로 불러오기</button>
       <button data-export="${i}" class="secondary">JSON 내보내기</button>
+      <button data-delete-session="${i}" class="delete-btn">Drive에서 삭제</button>
     </article>`;
   }).join("");
 
@@ -273,6 +276,10 @@ function renderHistory(){
 
   document.querySelectorAll("[data-export]").forEach(btn=>{
     btn.onclick=()=>downloadJSON(state.sessions[Number(btn.dataset.export)]);
+  });
+
+  document.querySelectorAll("[data-delete-session]").forEach(btn=>{
+    btn.onclick=()=>deleteDriveSession(Number(btn.dataset.deleteSession));
   });
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
@@ -287,13 +294,15 @@ async function syncToDrive(session){
   const url=getGasUrl();
   if(!url) return false;
   try{
-    await fetch(url,{
+    const response=await fetch(url,{
       method:"POST",
-      mode:"no-cors",
       headers:{"Content-Type":"text/plain;charset=UTF-8"},
-      body:JSON.stringify(session)
+      body:JSON.stringify(session),
+      redirect:"follow"
     });
-    return true;
+    const result=await response.json();
+    if(!result.ok) throw new Error(result.error||"Drive 저장 실패");
+    return result;
   }catch(e){
     return false;
   }
@@ -305,9 +314,9 @@ function sessionKey(session){
   return `fallback:${session.started_at||""}|${session.finished_at||""}|${JSON.stringify(session.exercises||[])}`;
 }
 
-function mergeSessions(incoming){
+function setDriveSessions(incoming){
   const map=new Map();
-  [...state.sessions, ...(incoming||[])].forEach(session=>{
+  (incoming||[]).forEach(session=>{
     if(session && Array.isArray(session.exercises)){
       map.set(sessionKey(session), session);
     }
@@ -315,7 +324,6 @@ function mergeSessions(incoming){
   state.sessions=[...map.values()].sort((a,b)=>
     new Date(a.finished_at||a.started_at||0)-new Date(b.finished_at||b.started_at||0)
   );
-  localStorage.setItem("workoutSessions",JSON.stringify(state.sessions));
   renderHistory();
   renderExerciseOptions();
 }
@@ -340,7 +348,7 @@ async function loadDriveSessions(showMessage=true){
     const result=await response.json();
     if(!result.ok) throw new Error(result.error||"Drive 조회 실패");
 
-    mergeSessions(result.sessions||[]);
+    setDriveSessions(result.sessions||[]);
     updateSyncStatus();
     if(showMessage) toast(`Drive 기록 ${result.sessions?.length||0}건을 확인했습니다.`);
     return true;
@@ -353,15 +361,36 @@ async function loadDriveSessions(showMessage=true){
 }
 
 async function retryPendingSync(){
-  if(!state.pendingSync.length || !getGasUrl()) return;
-  const remaining=[];
-  for(const session of state.pendingSync){
-    const ok=await syncToDrive(session);
-    if(!ok) remaining.push(session);
-  }
-  state.pendingSync=remaining;
-  localStorage.setItem("pendingSync",JSON.stringify(remaining));
   updateSyncStatus();
+}
+
+async function deleteDriveSession(sessionIndex){
+  const session=state.sessions[sessionIndex];
+  if(!session) return;
+
+  const fileId=session.drive_file_id || session._drive_file_id || session.file_id;
+  if(!fileId){
+    toast("Drive 파일 ID가 없어 삭제할 수 없습니다. Drive 새로고침 후 다시 시도하세요.");
+    return;
+  }
+
+  if(!confirm(`${dateLabel(session.started_at)} 기록을 Google Drive에서도 삭제할까요?`)) return;
+
+  try{
+    const response=await fetch(getGasUrl(),{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({action:"delete_strength",file_id:fileId}),
+      redirect:"follow"
+    });
+    const result=await response.json();
+    if(!result.ok) throw new Error(result.error||"삭제 실패");
+
+    toast("Google Drive에서 삭제했습니다.");
+    await loadDriveSessions(false);
+  }catch(error){
+    toast(`삭제 실패: ${error.message}`);
+  }
 }
 
 $("recordType").addEventListener("change",updateFields);
@@ -404,19 +433,17 @@ $("saveSessionBtn").onclick=async()=>{
     finished_at:finishedAt,
     exercises:state.current.map(ex=>({...ex,recorded_at:ex.recorded_at||finishedAt}))
   };
-  state.sessions.push(session);
-  localStorage.setItem("workoutSessions",JSON.stringify(state.sessions));
   const synced=await syncToDrive(session);
   if(!synced){
-    state.pendingSync.push(session);
-    localStorage.setItem("pendingSync",JSON.stringify(state.pendingSync));
+    toast("Drive 저장에 실패했습니다. 입력 목록은 유지됩니다.");
+    updateSyncStatus();
+    return;
   }
   state.current=[];
   renderCurrent();
-  renderHistory();
-  renderExerciseOptions();
+  await loadDriveSessions(false);
   updateSyncStatus();
-  toast(synced?"기기와 Drive에 저장했습니다.":"기기에 저장했고 Drive 재전송 대기 중입니다.");
+  toast("Google Drive에 저장했습니다.");
 };
 $("exportAllBtn").onclick=()=>downloadJSON({schema_version:1,exported_at:isoLocal(),sessions:state.sessions},"workout-history.json");
 $("settingsBtn").onclick=()=>{$("gasUrl").value=getGasUrl();$("settingsDialog").showModal();};
