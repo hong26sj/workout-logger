@@ -252,3 +252,20 @@ function sum_(a){return (a||[]).reduce((s,v)=>s+(isFinite(Number(v))?Number(v):0
 function avg_(a){const b=(a||[]).filter(v=>isFinite(Number(v))).map(Number);return b.length?sum_(b)/b.length:null;}
 function round_(v,n){if(v===null||v===undefined||!isFinite(Number(v)))return null;const p=Math.pow(10,n||0);return Math.round(Number(v)*p)/p;}
 function num_(v){return isFinite(Number(v))?round_(Number(v),1):null;}
+
+/**
+ * 최초 1회 Apps Script 편집기에서 직접 실행해 외부 API 호출 권한을 승인합니다.
+ * 실행 후 권한 승인 창에서 허용하고 웹 앱을 새 버전으로 재배포하세요.
+ */
+function authorizeOpenAIConnection() {
+  const response = UrlFetchApp.fetch('https://api.openai.com/v1/models', {
+    method: 'get',
+    headers: {
+      Authorization: 'Bearer ' + (getOpenAiKey_() || 'missing-key')
+    },
+    muteHttpExceptions: true
+  });
+
+  console.log('OpenAI authorization check HTTP ' + response.getResponseCode());
+  return response.getResponseCode();
+}

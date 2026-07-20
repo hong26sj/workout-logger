@@ -71,3 +71,14 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 .dialog-actions button{margin-top:10px}
 
 #workoutDate{font-size:1rem;font-weight:600;}
+
+/* 운동일자 입력칸은 모바일에서도 과도하게 넓어지지 않도록 제한 */
+#workoutDate{
+  display:block;
+  width:min(100%, 230px);
+  min-height:48px;
+  padding:10px 12px;
+  font-size:1rem;
+  font-weight:600;
+  text-align:left;
+}
