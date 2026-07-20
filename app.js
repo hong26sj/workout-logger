@@ -26,6 +26,25 @@ function isoLocal() {
   const p = n => String(n).padStart(2,"0");
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
+
+function localDateValue(d = new Date()) {
+  const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function selectedWorkoutDate(){
+  return $("workoutDate").value || localDateValue();
+}
+function isoForWorkoutDate(){
+  const now=new Date();
+  const p=n=>String(n).padStart(2,"0");
+  return `${selectedWorkoutDate()}T${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+}
+function updateWorkoutDateUi(){
+  const date=selectedWorkoutDate();
+  $("todayLabel").textContent=dateLabel(`${date}T12:00:00`);
+  $("saveSessionBtn").textContent=`${date} 기록 저장`;
+}
+
 function dateLabel(iso = new Date().toISOString()) {
   return new Intl.DateTimeFormat("ko-KR",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).format(new Date(iso));
 }
@@ -104,7 +123,7 @@ function buildExercise(){
     pain_level:valNum("painLevel") ?? 0,
     pain_area:cleanText("painArea") || "없음",
     memo:cleanText("memo"),
-    recorded_at:isoLocal()
+    recorded_at:isoForWorkoutDate()
   };
   if(record_type==="weighted"){
     base.weight_kg=valNum("weightKg");
@@ -175,13 +194,13 @@ function cancelEdit(){
   resetEntry();
 }
 
-function loadSessionToToday(sessionIndex){
+function loadSessionToSelectedDate(sessionIndex){
   const session=state.sessions[sessionIndex];
   if(!session || !(session.exercises||[]).length) return;
 
   if(state.current.length && !confirm("현재 입력 목록이 있습니다. 최근 기록으로 교체할까요?")) return;
 
-  const now=isoLocal();
+  const now=isoForWorkoutDate();
   state.current=(session.exercises||[]).map(ex=>({
     ...ex,
     recorded_at:now,
@@ -192,7 +211,7 @@ function loadSessionToToday(sessionIndex){
   }));
   cancelEdit();
   renderCurrent();
-  toast("최근 기록을 오늘 운동으로 불러왔습니다.");
+  toast("최근 기록을 선택한 날짜로 불러왔습니다.");
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
@@ -249,7 +268,7 @@ function renderHistory(){
   }).join("");
 
   document.querySelectorAll("[data-load]").forEach(btn=>{
-    btn.onclick=()=>loadSessionToToday(Number(btn.dataset.load));
+    btn.onclick=()=>loadSessionToSelectedDate(Number(btn.dataset.load));
   });
 
   document.querySelectorAll("[data-export]").forEach(btn=>{
@@ -374,13 +393,16 @@ $("clearBtn").onclick=()=>{
 $("cancelEditBtn").onclick=cancelEdit;
 $("saveSessionBtn").onclick=async()=>{
   if(!state.current.length)return;
+  const finishedAt=isoForWorkoutDate();
   const session={
-    schema_version:2,
+    schema_version:3,
     session_id:crypto.randomUUID(),
     source:"workout_logger_pwa",
-    started_at:state.current[0].recorded_at,
-    finished_at:isoLocal(),
-    exercises:[...state.current]
+    workout_date:selectedWorkoutDate(),
+    entered_at:isoLocal(),
+    started_at:state.current[0].recorded_at || finishedAt,
+    finished_at:finishedAt,
+    exercises:state.current.map(ex=>({...ex,recorded_at:ex.recorded_at||finishedAt}))
   };
   state.sessions.push(session);
   localStorage.setItem("workoutSessions",JSON.stringify(state.sessions));
@@ -409,7 +431,10 @@ const refreshDriveBtn = $("refreshDriveBtn");
 if (refreshDriveBtn) {
   refreshDriveBtn.onclick = () => loadDriveSessions(true);
 }
-$("todayLabel").textContent=dateLabel();
+$("workoutDate").value=localDateValue();
+$("workoutDate").max=localDateValue();
+$("workoutDate").addEventListener("change",()=>{ updateWorkoutDateUi(); if(state.current.length){ const stamp=isoForWorkoutDate(); state.current=state.current.map(ex=>({...ex,recorded_at:stamp})); } });
+updateWorkoutDateUi();
 updateFields();renderCurrent();renderHistory();renderExerciseOptions();updateSyncStatus();
 loadDriveSessions(false).finally(()=>retryPendingSync());
 

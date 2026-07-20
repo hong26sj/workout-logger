@@ -5,6 +5,7 @@ const TIME_ZONE = 'Asia/Seoul';
 const INITIAL_LOOKBACK_DAYS = 28;
 const OVERLAP_DAYS = 1;
 const ANALYSIS_FOLDER_NAME = 'Analysis';
+const BASELINE_FOLDER_NAME = 'Baseline';
 
 function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
@@ -37,8 +38,10 @@ function doGet(e) {
 function saveStrengthSession_(data) {
   const folder = DriveApp.getFolderById(STRENGTH_FOLDER_ID);
   const now = new Date();
-  const yearMonth = Utilities.formatDate(now,TIME_ZONE,'yyyy-MM');
-  const timestamp = Utilities.formatDate(now,TIME_ZONE,'yyyy-MM-dd_HHmmss');
+  const workoutDate = parseDate_(data.finished_at || data.started_at || data.workout_date || now);
+  const safeDate = workoutDate.getTime() > 0 ? workoutDate : now;
+  const yearMonth = Utilities.formatDate(safeDate,TIME_ZONE,'yyyy-MM');
+  const timestamp = Utilities.formatDate(safeDate,TIME_ZONE,'yyyy-MM-dd_HHmmss');
   const monthFolder = getOrCreateFolder_(folder,yearMonth);
   let suffix = '';
   if (data.session_id) {
@@ -77,7 +80,8 @@ function runAiAnalysis_(additionalRequest, force) {
 
     const stats = buildStatistics_(health,fitness,strength,periodFrom,now);
     const previousPlan = latest ? (latest.next_plan || null) : null;
-    const ai = callOpenAI_(stats,latest,previousPlan,String(additionalRequest||'').trim());
+    const baseline = getBaselineSummary_();
+    const ai = callOpenAI_(stats,latest,previousPlan,String(additionalRequest||'').trim(),baseline);
 
     const createdAt = formatIso_(now);
     const analysis = {
@@ -91,6 +95,7 @@ function runAiAnalysis_(additionalRequest, force) {
       period:{from:formatIso_(periodFrom),to:createdAt,data_read_from:formatIso_(analysisFrom)},
       data_sources:{health_files:health.length,fitness_files:fitness.length,strength_files:strength.length},
       statistics:stats,
+      baseline:baseline,
       previous_plan_review:ai.previous_plan_review,
       ai_analysis:ai.ai_analysis,
       weight_loss_analysis:ai.weight_loss_analysis,
@@ -181,7 +186,7 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
   };
 }
 
-function callOpenAI_(stats,latest,previousPlan,additionalRequest) {
+function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
   const key=getOpenAiKey_(); if(!key)throw new Error('스크립트 속성 OPENAI_API_KEY가 설정되지 않았습니다.');
   const schema={type:'object',additionalProperties:false,properties:{
     previous_plan_review:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},completion_rate:{type:['number','null']},completed:{type:'array',items:{type:'string'}},not_completed:{type:'array',items:{type:'string'}}},required:['summary','completion_rate','completed','not_completed']},
@@ -192,7 +197,7 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest) {
   },required:['previous_plan_review','ai_analysis','weight_loss_analysis','next_plan','warnings']};
 
   const instructions='당신은 한국어로 답하는 운동 코치다. 목표는 체중감량과 근력 유지·향상이다. 제공된 수치만 근거로 분석하고, 식사 데이터가 없으면 칼로리 적자를 추정하지 않는다. 통증 기록을 최우선으로 반영한다. 허리 통증이 있거나 악화 신호가 있으면 허리에 부담되는 동작을 계획에서 제외하고 진료 또는 휴식을 권고한다. 의료 진단을 하지 않는다. 계획은 현실적인 7일 계획으로 작성한다.';
-  const input={statistics:stats,previous_analysis:latest?{created_at:latest.created_at,ai_analysis:latest.ai_analysis,weight_loss_analysis:latest.weight_loss_analysis}:null,previous_plan:previousPlan||null,additional_request:additionalRequest||'',required_flow:['이전 계획 이행 평가','새 기록 분석','체중감량 분석','다음 7일 계획']};
+  const input={baseline:baseline||null,statistics:stats,previous_analysis:latest?{created_at:latest.created_at,ai_analysis:latest.ai_analysis,weight_loss_analysis:latest.weight_loss_analysis}:null,previous_plan:previousPlan||null,additional_request:additionalRequest||'',required_flow:['이전 계획 이행 평가','새 기록 분석','체중감량 분석','다음 7일 계획']};
   const payload={model:getOpenAiModel_(),store:false,instructions:instructions,input:JSON.stringify(input),text:{format:{type:'json_schema',name:'fitness_analysis',strict:true,schema:schema}}};
   const response=UrlFetchApp.fetch('https://api.openai.com/v1/responses',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+key},payload:JSON.stringify(payload),muteHttpExceptions:true});
   const code=response.getResponseCode(); const body=response.getContentText();
@@ -208,16 +213,34 @@ function extractOutputText_(result) {
   return '';
 }
 
+function getBaselineSummary_(){
+  const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID);
+  const folders=root.getFoldersByName(BASELINE_FOLDER_NAME);
+  if(!folders.hasNext())return null;
+  const folder=folders.next();
+  const files=folder.getFiles();
+  let latest=null;
+  while(files.hasNext()){
+    const file=files.next();
+    if(!/^baseline-.*\.json$/i.test(file.getName()))continue;
+    try{
+      const data=JSON.parse(file.getBlob().getDataAsString('UTF-8'));
+      if(!latest || file.getLastUpdated().getTime()>latest.modified){latest={modified:file.getLastUpdated().getTime(),data:data};}
+    }catch(e){console.log('Baseline 읽기 실패: '+file.getName());}
+  }
+  return latest?latest.data:null;
+}
+
 function getLatestAnalysisResponse_(){const a=findLatestAnalysis_();return {ok:true,analysis:a||null};}
 function saveAnalysis_(analysis){const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID);const af=getOrCreateFolder_(root,ANALYSIS_FOLDER_NAME);const mf=getOrCreateFolder_(af,Utilities.formatDate(new Date(),TIME_ZONE,'yyyy-MM'));af.getName();mf.createFile(analysis.analysis_id+'.json',JSON.stringify(analysis,null,2),MimeType.PLAIN_TEXT);}
 function findLatestAnalysis_(){const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID);const fs=root.getFoldersByName(ANALYSIS_FOLDER_NAME);if(!fs.hasNext())return null;const arr=[];collectAnalysis_(fs.next(),arr);arr.sort((a,b)=>parseDate_(a.created_at).getTime()-parseDate_(b.created_at).getTime());return arr.length?arr[arr.length-1]:null;}
 function collectAnalysis_(folder,arr){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/^analysis-.*\.json$/i.test(f.getName()))continue;try{arr.push(JSON.parse(f.getBlob().getDataAsString('UTF-8')));}catch(e){}}const subs=folder.getFolders();while(subs.hasNext())collectAnalysis_(subs.next(),arr);}
 
 function collectJsonFiles_(folder,from,to,type){const arr=[];collectJsonFilesRecursive_(folder,from,to,type,arr);return arr;}
-function collectJsonFilesRecursive_(folder,from,to,type,arr){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/\.json$/i.test(f.getName()))continue;if(type==='strength'&&!/^strength-.*\.json$/i.test(f.getName()))continue;try{const data=JSON.parse(f.getBlob().getDataAsString('UTF-8'));const t=inferJsonTimestamp_(data,f);if(t>=from&&t<=to)arr.push({name:f.getName(),modified_at:formatIso_(f.getLastUpdated()),timestamp:t.getTime(),data:data});}catch(e){console.log('JSON 읽기 실패 '+f.getName()+': '+e);}}const subs=folder.getFolders();while(subs.hasNext()){const sf=subs.next();if(type==='strength'&&sf.getName()===ANALYSIS_FOLDER_NAME)continue;collectJsonFilesRecursive_(sf,from,to,type,arr);}}
+function collectJsonFilesRecursive_(folder,from,to,type,arr){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/\.json$/i.test(f.getName()))continue;if(type==='strength'&&!/^strength-.*\.json$/i.test(f.getName()))continue;try{const data=JSON.parse(f.getBlob().getDataAsString('UTF-8'));const t=inferJsonTimestamp_(data,f);if(t>=from&&t<=to)arr.push({name:f.getName(),modified_at:formatIso_(f.getLastUpdated()),timestamp:t.getTime(),data:data});}catch(e){console.log('JSON 읽기 실패 '+f.getName()+': '+e);}}const subs=folder.getFolders();while(subs.hasNext()){const sf=subs.next();if(type==='strength'&&(sf.getName()===ANALYSIS_FOLDER_NAME||sf.getName()===BASELINE_FOLDER_NAME))continue;collectJsonFilesRecursive_(sf,from,to,type,arr);}}
 function inferJsonTimestamp_(data,file){if(data&&Array.isArray(data.exercises))return parseDate_(data.finished_at||data.started_at||file.getLastUpdated());const w=data&&data.data&&data.data.workouts;if(w&&w.length)return parseDate_(w[w.length-1].end||w[w.length-1].start||file.getLastUpdated());const m=data&&data.data&&data.data.metrics;if(m){let latest=0;m.forEach(x=>(x.data||[]).forEach(v=>{const t=parseDate_(v.date).getTime();if(t>latest)latest=t;}));if(latest)return new Date(latest);}const match=file.getName().match(/(20\d{2})-(\d{2})-(\d{2})/);if(match)return new Date(match[1]+'-'+match[2]+'-'+match[3]+'T23:59:59+09:00');return file.getLastUpdated();}
 function newestTimestamp_(arr){return arr.length?Math.max.apply(null,arr.map(x=>x.timestamp||0)):0;}
-function collectStrengthRecords_(folder,sessions){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/^strength-.*\.json$/i.test(f.getName()))continue;try{const d=JSON.parse(f.getBlob().getDataAsString('UTF-8'));if(d&&Array.isArray(d.exercises))sessions.push(d);}catch(e){}}const subs=folder.getFolders();while(subs.hasNext()){const sf=subs.next();if(sf.getName()!==ANALYSIS_FOLDER_NAME)collectStrengthRecords_(sf,sessions);}}
+function collectStrengthRecords_(folder,sessions){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/^strength-.*\.json$/i.test(f.getName()))continue;try{const d=JSON.parse(f.getBlob().getDataAsString('UTF-8'));if(d&&Array.isArray(d.exercises))sessions.push(d);}catch(e){}}const subs=folder.getFolders();while(subs.hasNext()){const sf=subs.next();if(sf.getName()!==ANALYSIS_FOLDER_NAME&&sf.getName()!==BASELINE_FOLDER_NAME)collectStrengthRecords_(sf,sessions);}}
 function getSessionTimestamp_(s){return parseDate_(s.finished_at||s.started_at||s.created_at||s.date||0).getTime();}
 function getOrCreateFolder_(parent,name){const f=parent.getFoldersByName(name);return f.hasNext()?f.next():parent.createFolder(name);}
 function getOpenAiKey_(){return PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY')||'';}

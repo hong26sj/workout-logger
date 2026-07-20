@@ -21,9 +21,14 @@
   <main>
     <section class="card">
       <div class="section-head">
-        <h2>오늘 운동</h2>
+        <h2>운동 기록</h2>
         <span id="todayLabel" class="muted"></span>
       </div>
+
+      <label>
+        운동일자
+        <input id="workoutDate" type="date" />
+      </label>
 
       <label>
         운동명
@@ -79,7 +84,7 @@
       <div id="emptyState" class="empty">아직 입력된 운동이 없습니다.</div>
       <div id="exerciseList" class="exercise-list"></div>
       <div class="actions">
-        <button id="saveSessionBtn" class="primary" disabled>오늘 기록 저장</button>
+        <button id="saveSessionBtn" class="primary" disabled>선택한 날짜로 저장</button>
         <button id="clearBtn" class="secondary" disabled>목록 비우기</button>
       </div>
     </section>

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "type": "baseline_summary",
+  "source": "HealthAutoExport_20260720141846.zip",
+  "created_at": "2026-07-20T14:18:46+09:00",
+  "period": {
+    "from": "2026-04-21T00:00:00+09:00",
+    "to": "2026-07-20T14:18:46+09:00"
+  },
+  "goal": "weight_loss",
+  "body": {
+    "weight_first_kg": 84.35,
+    "weight_latest_kg": 84.1,
+    "weight_change_kg": -0.25,
+    "weight_measurements": 9,
+    "body_fat_first_pct": 28.3,
+    "body_fat_latest_pct": 28.5,
+    "body_fat_change_pct_point": 0.2,
+    "lean_mass_first_kg": 60.5,
+    "lean_mass_latest_kg": 60.1,
+    "lean_mass_change_kg": -0.4
+  },
+  "activity": {
+    "days_with_steps": 91,
+    "steps_daily_average": 8494,
+    "steps_total": 772956,
+    "distance_total_km": 546.63,
+    "active_energy_total_kcal": 37122.3,
+    "exercise_minutes_total": 1810.0,
+    "stand_minutes_total": 8944.0
+  },
+  "heart_rate": {
+    "resting_hr_average": 73.25,
+    "resting_hr_latest": 60.0,
+    "walking_hr_average": 112.18,
+    "vo2_max_average": 33.44,
+    "vo2_max_latest": 35.35
+  },
+  "fitness": {
+    "session_count": 54,
+    "total_minutes": 1180.9,
+    "by_type": {
+      "전통적 근력 운동": 1,
+      "실내 자전거 타기": 1,
+      "실내 걷기": 27,
+      "야외 걷기": 22,
+      "야외 자전거 타기": 3
+    },
+    "monthly": {
+      "2026-04": {
+        "sessions": 1,
+        "minutes": 34.0,
+        "active_kcal": 107.7
+      },
+      "2026-05": {
+        "sessions": 14,
+        "minutes": 319.5,
+        "active_kcal": 1387.1
+      },
+      "2026-06": {
+        "sessions": 15,
+        "minutes": 319.2,
+        "active_kcal": 1442.9
+      },
+      "2026-07": {
+        "sessions": 24,
+        "minutes": 508.2,
+        "active_kcal": 4586.1
+      }
+    }
+  },
+  "notes": [
+    "초기 기준 데이터는 2026-04-21부터 2026-07-20까지의 Health Auto Export 자료를 요약한 것입니다.",
+    "식사 섭취 데이터는 포함되지 않았습니다."
+  ]
+}
