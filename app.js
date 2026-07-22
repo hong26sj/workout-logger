@@ -499,24 +499,148 @@ if ("serviceWorker" in navigator) {
 
 const analysisState={latest:null,running:false};
 function formatMetric(v,suffix=''){return v===null||v===undefined?'자료 없음':`${v}${suffix}`;}
+function formatNumber(v,digits=0){
+  if(v===null||v===undefined||!isFinite(Number(v))) return '-';
+  return Number(v).toLocaleString('ko-KR',{maximumFractionDigits:digits,minimumFractionDigits:digits});
+}
+function formatDelta(v,suffix='',digits=1){
+  if(v===null||v===undefined||!isFinite(Number(v))) return '-';
+  const n=Number(v);
+  const sign=n>0?'+':'';
+  return `${sign}${formatNumber(n,digits)}${suffix}`;
+}
+function normalizePercent(v){
+  if(v===null||v===undefined||!isFinite(Number(v))) return null;
+  const n=Number(v);
+  return n>0 && n<=1 ? n*100 : n;
+}
 function listHtml(items){return (items&&items.length)?`<ul class="analysis-list">${items.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul>`:'<p>특이사항 없음</p>';}
 function analysisSection(title, content, open=false){
   return `<details class="analysis-block"${open?' open':''}><summary>${escapeHtml(title)}</summary><div class="analysis-body">${content}</div></details>`;
+}
+function trendLineSvg(series,key,color,label,unit='',digits=1){
+  const rows=(series||[]);
+  const points=rows.map((x,i)=>({raw:x&&x[key],i})).filter(p=>p.raw!==null&&p.raw!==undefined&&isFinite(Number(p.raw))).map(p=>({...p,n:Number(p.raw)}));
+  if(points.length<2) return `<div class="mini-chart-empty">최근 7일 데이터가 부족합니다.</div>`;
+  const min=Math.min(...points.map(p=>p.n));
+  const max=Math.max(...points.map(p=>p.n));
+  const range=max-min || 1;
+  const denom=Math.max(rows.length-1,1);
+  const scaled=points.map(p=>({x:p.i*(300/denom),y:36-((p.n-min)/range)*24,n:p.n}));
+  const poly=scaled.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const first=scaled[0], last=scaled[scaled.length-1];
+  return `<svg class="mini-chart" viewBox="0 0 300 44" role="img" aria-label="${escapeHtml(label)} 최근 7일 추세">
+    <line x1="0" y1="36" x2="300" y2="36" stroke="#e5e7eb"/>
+    <polyline points="${poly}" fill="none" stroke="${color}" stroke-width="3"/>
+    <circle cx="${first.x.toFixed(1)}" cy="${first.y.toFixed(1)}" r="3" fill="${color}"/>
+    <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="3" fill="${color}"/>
+    <text x="0" y="12" font-size="10" fill="#6b7280">${formatNumber(first.n,digits)}${unit}</text>
+    <text x="244" y="12" font-size="10" fill="#6b7280">${formatNumber(last.n,digits)}${unit}</text>
+  </svg>`;
+}
+function trendCard(label,current,delta,series,key,color,unit='',digits=1){
+  return `<div class="trend-card">
+    <div class="trend-head">
+      <div><div class="trend-label">${escapeHtml(label)}</div><div class="trend-value">${formatMetric(current===null?null:formatNumber(current,digits),unit)}</div></div>
+      <div class="trend-delta">7일 ${formatDelta(delta,unit,digits)}</div>
+    </div>
+    ${trendLineSvg(series,key,color,label,unit,digits)}
+  </div>`;
+}
+function formatPace(minPerKm){
+  if(!minPerKm||!isFinite(Number(minPerKm))) return '-';
+  const total=Math.round(Number(minPerKm)*60);
+  const m=Math.floor(total/60);
+  const sec=String(total%60).padStart(2,'0');
+  return `${m}'${sec}"/km`;
+}
+function formatShortDate(iso){
+  if(!iso) return '';
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+function activitySummaryHtml(activity,fitness){
+  const cardio=activity.cardio_summary||{};
+  return `<div class="activity-summary">
+    <div class="activity-metric"><span>평균 걸음 수</span><strong>${formatNumber(activity.steps_daily_average,0)}보/일</strong></div>
+    <div class="activity-metric"><span>걷기·달리기 거리</span><strong>${formatNumber(cardio.distance_km ?? activity.distance_total_km,1)}km</strong></div>
+    <div class="activity-metric"><span>유산소 운동</span><strong>${formatNumber(cardio.session_count ?? fitness.session_count,0)}회 · ${formatNumber(cardio.total_minutes ?? fitness.total_minutes,0)}분</strong></div>
+    <div class="activity-metric"><span>평균 페이스</span><strong>${cardio.avg_pace_min_per_km?formatPace(cardio.avg_pace_min_per_km):'-'}</strong></div>
+    <div class="activity-metric"><span>평균 심박수</span><strong>${cardio.avg_hr?formatNumber(cardio.avg_hr,0)+'bpm':'-'}</strong></div>
+    <div class="activity-metric"><span>활동 칼로리</span><strong>${formatNumber(cardio.active_kcal ?? activity.active_energy_total_kcal,0)}kcal</strong></div>
+  </div>`;
+}
+function cardioSessionsHtml(activity,fitness){
+  const sessions=(activity.cardio_sessions||fitness.cardio_sessions||[]).slice(-5);
+  if(!sessions.length) return '<p>최근 걷기·달리기 세션 데이터가 부족합니다.</p>';
+  return `<div class="session-list">${sessions.map(s=>`
+    <div class="session-row">
+      <strong>${escapeHtml(formatShortDate(s.start)||'날짜 없음')} ${escapeHtml(s.name||'유산소')}</strong>
+      <span>${formatNumber(s.distance_km,2)}km · ${formatNumber(s.duration_min,0)}분 · ${s.pace_min_per_km?formatPace(s.pace_min_per_km):'-'} · 평균 ${s.avg_hr?formatNumber(s.avg_hr,0)+'bpm':'-'} · ${formatNumber(s.active_kcal,0)}kcal</span>
+    </div>`).join('')}</div>`;
+}
+function planExerciseLine(ex){
+  const parts=[ex.exercise||'운동'];
+  if(ex.record_type==='timed'){
+    if(ex.seconds) parts.push(`${Math.round(ex.seconds/60)}분`);
+  }else{
+    if(ex.suggested_weight_kg!==null&&ex.suggested_weight_kg!==undefined) parts.push(`${ex.suggested_weight_kg}kg`);
+    if(ex.reps) parts.push(`${ex.reps}회`);
+  }
+  if(ex.sets) parts.push(`${ex.sets}세트`);
+  if(ex.target_rpe) parts.push(`RPE ${ex.target_rpe}`);
+  return parts.join(' · ');
+}
+function planSessionsHtml(plan){
+  const sessions=(plan.sessions||[]);
+  if(!sessions.length) return '<p>생성된 세션이 없습니다.</p>';
+  return `<div class="plan-list">${sessions.map(s=>`
+    <div class="plan-row">
+      <strong>${escapeHtml(s.day_label||'일자 미정')}</strong>
+      <div class="part">${escapeHtml(s.focus||'운동')}</div>
+      <div class="exercise-lines">${(s.exercises||[]).map(ex=>`<span class="exercise-line">${escapeHtml(planExerciseLine(ex))}</span>`).join('')}</div>
+    </div>`).join('')}</div>`;
 }
 function renderLatestAnalysis(analysis){
   analysisState.latest=analysis||null;
   if(!analysis){$("analysisBadge").textContent='분석 없음';$("analysisResult").innerHTML='<div class="empty">저장된 AI 분석이 없습니다.</div>';return;}
   const a=analysis.ai_analysis||{},w=analysis.weight_loss_analysis||{},p=analysis.next_plan||{},stats=analysis.statistics||{},body=stats.body||{},activity=stats.activity||{},strength=stats.strength||{};
   $("analysisBadge").textContent=new Date(analysis.created_at).toLocaleDateString('ko-KR');
-  const sessions=(p.sessions||[]).map(s=>`<div class="plan-session"><strong>${escapeHtml(s.day_label)} · ${escapeHtml(s.focus)}</strong>${(s.exercises||[]).map(ex=>`<div class="plan-exercise">${escapeHtml(ex.exercise)} · ${ex.sets}세트${ex.reps?` × ${ex.reps}회`:''}${ex.seconds?` × ${ex.seconds}초`:''}${ex.suggested_weight_kg!==null&&ex.suggested_weight_kg!==undefined?` · ${ex.suggested_weight_kg}kg`:''}${ex.target_rpe?` · RPE ${ex.target_rpe}`:''}<br>${escapeHtml(ex.reason||'')}</div>`).join('')}</div>`).join('');
+  const bodyFat=normalizePercent(body.body_fat_latest_pct);
+  const series=body.weekly_body_series||[];
+  const firstWeight=(series.find(x=>x.weight_kg!==null&&x.weight_kg!==undefined)||{}).weight_kg ?? body.weight_first_kg ?? null;
+  const firstFat=normalizePercent((series.find(x=>x.body_fat_pct!==null&&x.body_fat_pct!==undefined)||{}).body_fat_pct);
+  const firstBmi=(series.find(x=>x.bmi!==null&&x.bmi!==undefined)||{}).bmi ?? null;
+  const currentMetrics=`<div class="analysis-body metrics-3">
+    <div class="metric"><span>체중</span><strong>${formatMetric(body.weight_latest_kg===null?null:formatNumber(body.weight_latest_kg,1),'kg')}</strong></div>
+    <div class="metric"><span>체지방률</span><strong>${formatMetric(bodyFat===null?null:formatNumber(bodyFat,1),'%')}</strong></div>
+    <div class="metric"><span>BMI</span><strong>${formatMetric(body.bmi_latest===null?null:formatNumber(body.bmi_latest,1),'')}</strong></div>
+  </div>`;
+  const weightLossBody=`<div class="trend-grid">
+      ${trendCard('체중',body.weight_latest_kg,body.weight_latest_kg!==null&&firstWeight!==null?body.weight_latest_kg-firstWeight:null,series,'weight_kg','#111827','kg',1)}
+      ${trendCard('체지방률',bodyFat,bodyFat!==null&&firstFat!==null?bodyFat-firstFat:null,(series||[]).map(x=>({...x,body_fat_pct:normalizePercent(x.body_fat_pct)})),'body_fat_pct','#2563eb','%',1)}
+      ${trendCard('BMI',body.bmi_latest,body.bmi_latest!==null&&firstBmi!==null?body.bmi_latest-firstBmi:null,series,'bmi','#16a34a','',1)}
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">활동량 종합 <span>최근 7일</span></div>
+      ${activitySummaryHtml(activity,stats.fitness||{})}
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">유산소 세션 <span>걷기·달리기</span></div>
+      ${cardioSessionsHtml(activity,stats.fitness||{})}
+    </div>
+    <p class="chart-note">${escapeHtml(w.activity_assessment||'걸음 수, 걷기·달리기 거리, 유산소 시간, 페이스, 평균 심박수를 함께 보며 활동량을 평가합니다.')}</p>`;
+  const trendItems=(a.progress||[]).concat(a.concerns||[]).slice(0,5);
   $("analysisResult").innerHTML=`
     <div class="analysis-meta">분석기간: ${escapeHtml(analysis.period?.from||'')} ~ ${escapeHtml(analysis.period?.to||'')}<br>추가 요청: ${escapeHtml(analysis.additional_request||'없음')}</div>
-    ${analysisSection('현재 수치', `<p>체중 ${formatMetric(body.weight_latest_kg,'kg')} · 변화 ${formatMetric(body.weight_change_kg,'kg')}<br>일평균 걸음 ${formatMetric(activity.steps_daily_average,'걸음')} · 운동 ${formatMetric(stats.fitness?.total_minutes,'분')}<br>근력 ${formatMetric(strength.session_count,'회')} · 볼륨 ${formatMetric(strength.total_volume_kg,'kg')}</p>`, true)}
-    ${analysisSection('운동 현황', `<p>${escapeHtml(a.summary||'')}</p>${listHtml(a.progress)}${listHtml(a.concerns)}<p><strong>회복:</strong> ${escapeHtml(a.recovery_status||'')}</p><p><strong>균형:</strong> ${escapeHtml(a.training_balance||'')}</p>`)}
-    ${analysisSection('체중감량 분석', `<p>${escapeHtml(w.summary||'')}</p><p><strong>체중 추세:</strong> ${escapeHtml(w.weight_trend||'')}</p><p><strong>활동량:</strong> ${escapeHtml(w.activity_assessment||'')}</p>${listHtml(w.weekly_targets)}${listHtml(w.limitations)}`)}
-    ${analysisSection('다음 7일 계획', `<p>${escapeHtml(p.weekly_goal||'')}</p>${sessions||'<p>생성된 세션이 없습니다.</p>'}${listHtml(p.progression_rules)}${listHtml(p.pain_rules)}`)}
+    ${analysisSection('현재 수치', currentMetrics, true)}
+    ${analysisSection('운동 현황', `${listHtml(trendItems)}<p><strong>균형:</strong> ${escapeHtml(a.training_balance||'')}</p>`)}
+    ${analysisSection('체중감량 분석', weightLossBody)}
+    ${analysisSection('다음 7일 계획', `<p>${escapeHtml(p.weekly_goal||'')}</p>${planSessionsHtml(p)}`)}
     ${analysis.warnings?.length?analysisSection('주의사항', listHtml(analysis.warnings)):''}`;
 }
+
 async function loadLatestAnalysis(showMessage=true){
   const url=getGasUrl(); if(!url)return;
   $("analysisStatus").className='sync-status status-loading';$("analysisStatus").textContent='마지막 분석을 불러오는 중...';

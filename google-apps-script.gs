@@ -141,6 +141,39 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
   const firstMetric=(name)=>{
     const a=(metrics[name]||[]).slice().sort((a,b)=>a.t-b.t); return a.length?round_(a[0].qty,2):null;
   };
+  const metricDailyAvg=(day,name)=>round_(avg_(daily[day]&&daily[day][name]||[]),2);
+  const metricDailySum=(day,name)=>round_(sum_(daily[day]&&daily[day][name]||[]),2);
+  const normalizePercent=(v)=>v!==null&&v!==undefined&&isFinite(Number(v))&&Number(v)>0&&Number(v)<=1?round_(Number(v)*100,1):v;
+  const recentDays=[];
+  const cursor=new Date(periodTo.getTime());
+  cursor.setHours(0,0,0,0);
+  for(let i=6;i>=0;i--){
+    const d=addDays_(cursor,-i);
+    recentDays.push(Utilities.formatDate(d,TIME_ZONE,'yyyy-MM-dd'));
+  }
+  const weeklyBodySeries=recentDays.map(d=>({
+    date:d,
+    weight_kg:metricDailyAvg(d,'weight_body_mass'),
+    body_fat_pct:normalizePercent(metricDailyAvg(d,'body_fat_percentage')),
+    bmi:metricDailyAvg(d,'body_mass_index')
+  }));
+  const dailyActivitySeries=recentDays.map(d=>({
+    date:d,
+    steps:round_(metricDailySum(d,'step_count'),0),
+    walking_running_distance_km:metricDailySum(d,'walking_running_distance'),
+    active_kcal:round_(metricDailySum(d,'active_energy')/4.184,1),
+    exercise_minutes:metricDailySum(d,'apple_exercise_time')
+  }));
+  const workoutDistanceKm=(w)=>{
+    const distance=w.distance||w.totalDistance||w.walkingRunningDistance||w.walkingAndRunningDistance||w.total_distance;
+    const qty=distance&&isFinite(Number(distance.qty))?Number(distance.qty):0;
+    if(!qty)return null;
+    const unit=String(distance.units||distance.unit||'').toLowerCase();
+    if(unit==='m'||unit==='meter'||unit==='meters')return qty/1000;
+    return qty;
+  };
+  const workoutCadence=(w)=>num_(w.stepCadence&&w.stepCadence.qty||w.cadence&&w.cadence.qty||w.avgCadence&&w.avgCadence.qty);
+  const isWalkRunWorkout=(name)=>/걷|달리|러닝|walk|run/i.test(String(name||''));
 
   const workouts=[];
   const workoutIds={};
@@ -149,8 +182,33 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     const key=w.id||[w.start,w.end,w.name].join('|'); if(workoutIds[key])return; workoutIds[key]=true;
     const durationMin=Number(w.duration||0)/60;
     const activeKj=Number(w.activeEnergyBurned&&w.activeEnergyBurned.qty||0);
-    workouts.push({name:w.name||'운동',start:formatIso_(start),duration_min:round_(durationMin,1),active_kcal:round_(activeKj/4.184,1),avg_hr:num_(w.avgHeartRate&&w.avgHeartRate.qty||w.heartRate&&w.heartRate.avg&&w.heartRate.avg.qty),max_hr:num_(w.maxHeartRate&&w.maxHeartRate.qty||w.heartRate&&w.heartRate.max&&w.heartRate.max.qty)});
+    const distanceKm=workoutDistanceKm(w);
+    workouts.push({
+      name:w.name||'운동',
+      start:formatIso_(start),
+      duration_min:round_(durationMin,1),
+      active_kcal:round_(activeKj/4.184,1),
+      avg_hr:num_(w.avgHeartRate&&w.avgHeartRate.qty||w.heartRate&&w.heartRate.avg&&w.heartRate.avg.qty),
+      max_hr:num_(w.maxHeartRate&&w.maxHeartRate.qty||w.heartRate&&w.heartRate.max&&w.heartRate.max.qty),
+      distance_km:round_(distanceKm,2),
+      pace_min_per_km:distanceKm?round_(durationMin/distanceKm,2):null,
+      cadence_spm:workoutCadence(w),
+      is_walk_run:isWalkRunWorkout(w.name)
+    });
   }));
+  const cardioWorkouts=workouts.filter(w=>w.is_walk_run);
+  const cardioDistance=sum_(cardioWorkouts.map(w=>w.distance_km||0));
+  const cardioMinutes=sum_(cardioWorkouts.map(w=>w.duration_min||0));
+  const cardioKcal=sum_(cardioWorkouts.map(w=>w.active_kcal||0));
+  const cardioHrWeighted=sum_(cardioWorkouts.map(w=>(w.avg_hr||0)*(w.duration_min||0)));
+  const cardioSummary={
+    session_count:cardioWorkouts.length,
+    total_minutes:round_(cardioMinutes,1),
+    distance_km:round_(cardioDistance,2),
+    avg_pace_min_per_km:cardioDistance?round_(cardioMinutes/cardioDistance,2):null,
+    avg_hr:cardioMinutes?round_(cardioHrWeighted/cardioMinutes,1):null,
+    active_kcal:round_(cardioKcal,1)
+  };
 
   const strengthSessions=[];
   const strengthSeen={};
@@ -176,10 +234,10 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
   const weightFirst=firstMetric('weight_body_mass');
   return {
     coverage:{from:formatIso_(periodFrom),to:formatIso_(periodTo),days_with_health_data:days.length},
-    body:{weight_latest_kg:weightLatest,weight_first_kg:weightFirst,weight_change_kg:weightLatest!==null&&weightFirst!==null?round_(weightLatest-weightFirst,2):null,body_fat_latest_pct:latestMetric('body_fat_percentage'),lean_mass_latest_kg:latestMetric('lean_body_mass'),bmi_latest:latestMetric('body_mass_index'),weight_measurements:(metrics.weight_body_mass||[]).length},
-    activity:{steps_total:round_(sumMetric('step_count'),0),steps_daily_average:round_(avg_(dailySums('step_count')),0),distance_total_km:sumMetric('walking_running_distance'),active_energy_total_kcal:round_(sumMetric('active_energy')/4.184,1),exercise_minutes_total:sumMetric('apple_exercise_time'),stand_minutes_total:sumMetric('apple_stand_time')},
+    body:{weight_latest_kg:weightLatest,weight_first_kg:weightFirst,weight_change_kg:weightLatest!==null&&weightFirst!==null?round_(weightLatest-weightFirst,2):null,body_fat_latest_pct:normalizePercent(latestMetric('body_fat_percentage')),lean_mass_latest_kg:latestMetric('lean_body_mass'),bmi_latest:latestMetric('body_mass_index'),weight_measurements:(metrics.weight_body_mass||[]).length,weekly_body_series:weeklyBodySeries},
+    activity:{steps_total:round_(sumMetric('step_count'),0),steps_daily_average:round_(avg_(dailySums('step_count')),0),distance_total_km:sumMetric('walking_running_distance'),active_energy_total_kcal:round_(sumMetric('active_energy')/4.184,1),exercise_minutes_total:sumMetric('apple_exercise_time'),stand_minutes_total:sumMetric('apple_stand_time'),daily_activity_series:dailyActivitySeries,cardio_summary:cardioSummary,cardio_sessions:cardioWorkouts.slice(-10)},
     heart_rate:{resting_hr_average:round_(avg_(dailyAvgs('resting_heart_rate')),1),resting_hr_latest:latestMetric('resting_heart_rate'),walking_hr_average:round_(avg_(dailyAvgs('walking_heart_rate_average')),1),heart_rate_average:round_(avg_(dailyAvgs('heart_rate')),1),oxygen_saturation_latest:latestMetric('oxygen_saturation')},
-    fitness:{session_count:workouts.length,total_minutes:round_(workouts.reduce((s,w)=>s+w.duration_min,0),1),active_kcal:round_(workouts.reduce((s,w)=>s+w.active_kcal,0),1),sessions:workouts.slice(-50)},
+    fitness:{session_count:workouts.length,total_minutes:round_(workouts.reduce((s,w)=>s+w.duration_min,0),1),active_kcal:round_(workouts.reduce((s,w)=>s+w.active_kcal,0),1),cardio_sessions:cardioWorkouts.slice(-10),sessions:workouts.slice(-50)},
     strength:{session_count:strengthSessions.length,total_sets:totalSets,total_reps:totalReps,total_volume_kg:round_(totalVolume,1),timed_seconds:totalTimedSeconds,by_exercise:byExercise},
     pain:{event_count:pain.length,max_level:pain.length?Math.max.apply(null,pain.map(x=>x.level)):0,events:pain.slice(-30)},
     weight_loss_context:{goal:'체중감량',available_energy_expenditure_kcal:round_(sumMetric('active_energy')/4.184,1),food_intake_data_available:false,note:'식사·섭취 열량 데이터가 없으므로 칼로리 적자량을 직접 계산하지 않고 체중 추세와 활동량을 중심으로 평가합니다.'}

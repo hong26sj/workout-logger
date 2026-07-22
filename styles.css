@@ -102,3 +102,191 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
   padding:8px 6px;
   font-size:12px;
 }
+
+.metrics-3{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:8px;
+}
+
+.metric{
+  min-width:0;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px;
+  background:#fbfbfc;
+}
+
+.metric span{
+  display:block;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:800;
+  margin-bottom:4px;
+}
+
+.metric strong{
+  display:block;
+  font-size:14px;
+  line-height:1.35;
+}
+
+.trend-grid{
+  display:grid;
+  gap:8px;
+}
+
+.trend-card,
+.chart-card{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:12px;
+  background:#fbfbfc;
+}
+
+.chart-card{
+  margin-top:10px;
+}
+
+.trend-head,
+.chart-title{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+  margin-bottom:8px;
+}
+
+.trend-label,
+.chart-title span{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:900;
+}
+
+.chart-title{
+  font-size:13px;
+  font-weight:900;
+}
+
+.trend-value{
+  font-size:18px;
+  font-weight:900;
+  line-height:1.2;
+}
+
+.trend-delta{
+  color:#374151;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+.mini-chart{
+  width:100%;
+  height:44px;
+  display:block;
+}
+
+.mini-chart-empty{
+  padding:14px 0 2px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.activity-summary{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+
+.activity-metric{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+  background:#fff;
+}
+
+.activity-metric span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:900;
+  margin-bottom:3px;
+}
+
+.activity-metric strong{
+  display:block;
+  font-size:14px;
+  line-height:1.3;
+}
+
+.session-list,
+.plan-list,
+.exercise-lines{
+  display:grid;
+  gap:8px;
+}
+
+.session-row,
+.plan-row{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px;
+  background:#fbfbfc;
+}
+
+.session-row{
+  background:#fff;
+}
+
+.session-row strong,
+.plan-row strong{
+  display:block;
+  font-size:13px;
+  line-height:1.35;
+  margin-bottom:5px;
+}
+
+.session-row span,
+.plan-row span{
+  display:block;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+
+.plan-row .part{
+  color:var(--text);
+  font-size:13px;
+  font-weight:900;
+  margin-bottom:5px;
+}
+
+.exercise-line{
+  color:#374151 !important;
+  border-top:1px solid var(--line);
+  padding-top:6px;
+}
+
+.exercise-line:first-child{
+  border-top:0;
+  padding-top:0;
+}
+
+.chart-note{
+  color:#374151;
+  font-size:13px;
+  line-height:1.6;
+  margin-top:8px;
+}
+
+@media(max-width:460px){
+  .metrics-3{grid-template-columns:1fr 1fr 1fr}
+  .activity-summary{grid-template-columns:1fr 1fr}
+}
+
+@media(max-width:360px){
+  .metrics-3,
+  .activity-summary{grid-template-columns:1fr}
+}
