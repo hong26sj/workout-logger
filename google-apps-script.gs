@@ -173,7 +173,12 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     return qty;
   };
   const workoutCadence=(w)=>num_(w.stepCadence&&w.stepCadence.qty||w.cadence&&w.cadence.qty||w.avgCadence&&w.avgCadence.qty);
-  const isWalkRunWorkout=(name)=>/걷|달리|러닝|walk|run/i.test(String(name||''));
+  const isWalkRunWorkout=(w,distanceKm,paceMinPerKm,cadenceSpm)=>{
+    const name=String(w&&w.name||'');
+    if(/걷|달리|러닝|런닝|walk|run/i.test(name))return true;
+    if(/자전거|사이클|bike|cycle|cycling/i.test(name))return false;
+    return Number(distanceKm)>0&&Number(paceMinPerKm)>0&&Number(cadenceSpm)>0;
+  };
 
   const workouts=[];
   const workoutIds={};
@@ -183,6 +188,9 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     const durationMin=Number(w.duration||0)/60;
     const activeKj=Number(w.activeEnergyBurned&&w.activeEnergyBurned.qty||0);
     const distanceKm=workoutDistanceKm(w);
+    const paceMinPerKm=distanceKm?round_(durationMin/distanceKm,2):null;
+    const cadenceSpm=workoutCadence(w);
+    const isWalkRun=isWalkRunWorkout(w,distanceKm,paceMinPerKm,cadenceSpm);
     workouts.push({
       name:w.name||'운동',
       start:formatIso_(start),
@@ -191,9 +199,9 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
       avg_hr:num_(w.avgHeartRate&&w.avgHeartRate.qty||w.heartRate&&w.heartRate.avg&&w.heartRate.avg.qty),
       max_hr:num_(w.maxHeartRate&&w.maxHeartRate.qty||w.heartRate&&w.heartRate.max&&w.heartRate.max.qty),
       distance_km:round_(distanceKm,2),
-      pace_min_per_km:distanceKm?round_(durationMin/distanceKm,2):null,
-      cadence_spm:workoutCadence(w),
-      is_walk_run:isWalkRunWorkout(w.name)
+      pace_min_per_km:paceMinPerKm,
+      cadence_spm:cadenceSpm,
+      is_walk_run:isWalkRun
     });
   }));
   const cardioWorkouts=workouts.filter(w=>w.is_walk_run);
