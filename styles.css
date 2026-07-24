@@ -12,7 +12,7 @@ main{max-width:720px;margin:0 auto;padding:0 14px 36px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 5px 20px rgba(17,24,39,.04)}
 .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
 label{display:block;font-size:13px;font-weight:700;margin:12px 0 0}
-input,select,textarea{width:100%;margin-top:7px;border:1px solid var(--line);border-radius:12px;padding:13px 12px;font:inherit;background:#fff;color:var(--text)}
+input,select,textarea{width:100%;margin-top:7px;border:1px solid var(--line);border-radius:12px;padding:13px 12px;font:inherit;font-size:16px;background:#fff;color:var(--text)}
 textarea{resize:vertical}
 input:focus,select:focus,textarea:focus{outline:2px solid #9ca3af;outline-offset:1px}
 .grid-2,.grid-3{display:grid;gap:10px}
@@ -75,15 +75,9 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 .dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .dialog-actions button{margin-top:10px}
 
-#workoutDate{font-size:1rem;font-weight:600;}
-
 #workoutDate{
   display:block;
   width:100%;
-  max-width:none;
-  min-height:48px;
-  padding:10px 12px;
-  font-size:1rem;
   font-weight:600;
   text-align:left;
 }
