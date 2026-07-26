@@ -86,6 +86,7 @@ function runAiAnalysis_(additionalRequest, force) {
     }
 
     const stats = buildStatistics_(health,fitness,strength,periodFrom,now);
+    const activityComparison = buildActivityComparison_(stats, latest);
     const previousPlan = latest ? (latest.next_plan || null) : null;
     const baseline = getBaselineSummary_();
     const ai = callOpenAI_(stats,latest,previousPlan,String(additionalRequest||'').trim(),baseline);
@@ -102,6 +103,7 @@ function runAiAnalysis_(additionalRequest, force) {
       period:{from:formatIso_(periodFrom),to:createdAt,data_read_from:formatIso_(analysisFrom)},
       data_sources:{health_files:health.length,fitness_files:fitness.length,strength_files:strength.length},
       statistics:stats,
+      activity_comparison:activityComparison,
       baseline:baseline,
       previous_plan_review:ai.previous_plan_review,
       ai_analysis:ai.ai_analysis,
@@ -303,6 +305,91 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     strength:{session_count:strengthSessions.length,total_sets:totalSets,total_reps:totalReps,total_volume_kg:round_(totalVolume,1),timed_seconds:totalTimedSeconds,by_exercise:byExercise},
     pain:{event_count:pain.length,max_level:pain.length?Math.max.apply(null,pain.map(x=>x.level)):0,events:pain.slice(-30)},
     weight_loss_context:{goal:'체중감량',available_energy_expenditure_kcal:round_(sumMetric('active_energy')/4.184,1),food_intake_data_available:false,note:'식사·섭취 열량 데이터가 없으므로 칼로리 적자량을 직접 계산하지 않고 체중 추세와 활동량을 중심으로 평가합니다.'}
+  };
+}
+
+
+function buildMetricComparison_(current, previous, lowerIsBetter) {
+  const currentNum = Number(current);
+  const previousNum = Number(previous);
+
+  if (!isFinite(currentNum) || !isFinite(previousNum)) {
+    return null;
+  }
+
+  const change = round_(currentNum - previousNum, 2);
+  const changePct = previousNum !== 0
+    ? round_((change / Math.abs(previousNum)) * 100, 1)
+    : null;
+
+  let direction = 'same';
+  if (change > 0) direction = 'up';
+  if (change < 0) direction = 'down';
+
+  let improved = null;
+  if (change !== 0) {
+    improved = lowerIsBetter ? change < 0 : change > 0;
+  }
+
+  return {
+    current: round_(currentNum, 2),
+    previous: round_(previousNum, 2),
+    change: change,
+    change_pct: changePct,
+    direction: direction,
+    improved: improved
+  };
+}
+
+function buildActivityComparison_(currentStats, previousAnalysis) {
+  const previousStats = previousAnalysis && previousAnalysis.statistics;
+  if (!previousStats) return null;
+
+  const currentActivity = currentStats.activity || {};
+  const previousActivity = previousStats.activity || {};
+  const currentFitness = currentStats.fitness || {};
+  const previousFitness = previousStats.fitness || {};
+  const currentCardio = currentActivity.cardio_summary || {};
+  const previousCardio = previousActivity.cardio_summary || {};
+
+  return {
+    compared_to_analysis_id: previousAnalysis.analysis_id || null,
+    compared_to_created_at: previousAnalysis.created_at || null,
+    steps_daily_average: buildMetricComparison_(
+      currentActivity.steps_daily_average,
+      previousActivity.steps_daily_average,
+      false
+    ),
+    distance_km: buildMetricComparison_(
+      currentCardio.distance_km ?? currentActivity.distance_total_km,
+      previousCardio.distance_km ?? previousActivity.distance_total_km,
+      false
+    ),
+    cardio_session_count: buildMetricComparison_(
+      currentCardio.session_count ?? currentFitness.session_count,
+      previousCardio.session_count ?? previousFitness.session_count,
+      false
+    ),
+    cardio_minutes: buildMetricComparison_(
+      currentCardio.total_minutes ?? currentFitness.total_minutes,
+      previousCardio.total_minutes ?? previousFitness.total_minutes,
+      false
+    ),
+    average_pace_min_per_km: buildMetricComparison_(
+      currentCardio.avg_pace_min_per_km,
+      previousCardio.avg_pace_min_per_km,
+      true
+    ),
+    average_heart_rate: buildMetricComparison_(
+      currentCardio.avg_hr,
+      previousCardio.avg_hr,
+      true
+    ),
+    active_kcal: buildMetricComparison_(
+      currentCardio.active_kcal ?? currentActivity.active_energy_total_kcal,
+      previousCardio.active_kcal ?? previousActivity.active_energy_total_kcal,
+      false
+    )
   };
 }
 

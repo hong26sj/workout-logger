@@ -1,9 +1,11 @@
-const CACHE_VERSION = 'workout-logger-ai-v6';
+const CACHE_VERSION = 'workout-logger-ai-v7';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
+  './activity-comparison.css',
   './app.js',
+  './activity-comparison.js',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png'
@@ -21,9 +23,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys
-          .filter(key => key !== CACHE_VERSION)
-          .map(key => caches.delete(key))
+        keys.filter(key => key !== CACHE_VERSION).map(key => caches.delete(key))
       ))
       .then(() => self.clients.claim())
   );
@@ -31,9 +31,7 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-
   if (request.method !== 'GET') return;
-
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
@@ -41,7 +39,9 @@ self.addEventListener('fetch', event => {
     request.mode === 'navigate' ||
     url.pathname.endsWith('/index.html') ||
     url.pathname.endsWith('/app.js') ||
+    url.pathname.endsWith('/activity-comparison.js') ||
     url.pathname.endsWith('/styles.css') ||
+    url.pathname.endsWith('/activity-comparison.css') ||
     url.pathname.endsWith('/manifest.webmanifest') ||
     url.pathname.endsWith('/service-worker.js');
 
@@ -49,7 +49,6 @@ self.addEventListener('fetch', event => {
     event.respondWith(networkFirst(request));
     return;
   }
-
   event.respondWith(cacheFirst(request));
 });
 
@@ -64,11 +63,7 @@ async function networkFirst(request) {
   } catch (error) {
     const cached = await caches.match(request);
     if (cached) return cached;
-
-    if (request.mode === 'navigate') {
-      return caches.match('./index.html');
-    }
-
+    if (request.mode === 'navigate') return caches.match('./index.html');
     throw error;
   }
 }
@@ -76,7 +71,6 @@ async function networkFirst(request) {
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
-
   const response = await fetch(request);
   if (response && response.ok) {
     const cache = await caches.open(CACHE_VERSION);

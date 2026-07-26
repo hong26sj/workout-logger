@@ -1,0 +1,41 @@
+.activity-metric-with-comparison{
+  position:relative;
+  min-height:74px;
+  padding:10px;
+  overflow:hidden;
+}
+.activity-metric-copy{
+  min-width:0;
+  padding-right:78px;
+}
+.activity-comparison{
+  position:absolute;
+  top:10px;
+  right:10px;
+  max-width:82px;
+  text-align:right;
+  line-height:1.15;
+}
+.activity-comparison strong{
+  display:block;
+  font-size:11px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.activity-comparison span{
+  display:block;
+  margin-top:3px;
+  font-size:9px;
+  font-weight:800;
+  color:var(--muted);
+  white-space:nowrap;
+}
+.activity-comparison.comparison-positive strong{color:#16a34a}
+.activity-comparison.comparison-negative strong{color:#dc2626}
+.activity-comparison.comparison-neutral strong{color:#6b7280}
+@media(max-width:380px){
+  .activity-metric-copy{padding-right:70px}
+  .activity-comparison{right:8px;max-width:74px}
+  .activity-comparison strong{font-size:10px}
+  .activity-comparison span{font-size:8px}
+}

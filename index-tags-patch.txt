@@ -1,0 +1,5 @@
+index.html의 <head> 안에서 기존 styles.css 다음 줄에 추가:
+<link rel="stylesheet" href="activity-comparison.css" />
+
+index.html 하단에서 기존 app.js 다음 줄에 추가:
+<script src="activity-comparison.js"></script>
