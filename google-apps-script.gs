@@ -73,8 +73,17 @@ function runAiAnalysis_(additionalRequest, force) {
   try {
     const now = new Date();
     const latest = findLatestAnalysis_();
-    const analysisFrom = latest ? addDays_(parseDate_(latest.period && latest.period.to || latest.created_at),-OVERLAP_DAYS) : addDays_(now,-INITIAL_LOOKBACK_DAYS);
-    const periodFrom = latest ? parseDate_(latest.period && latest.period.to || latest.created_at) : analysisFrom;
+    const recentSevenDayFrom = startOfDay_(addDays_(now,-6));
+    const previousAnalysisTime = latest
+      ? parseDate_(latest.period && latest.period.to || latest.created_at)
+      : recentSevenDayFrom;
+    const incrementalReadFrom = latest
+      ? addDays_(previousAnalysisTime,-OVERLAP_DAYS)
+      : addDays_(now,-INITIAL_LOOKBACK_DAYS);
+    const analysisFrom = incrementalReadFrom < recentSevenDayFrom
+      ? incrementalReadFrom
+      : recentSevenDayFrom;
+    const periodFrom = recentSevenDayFrom;
 
     const health = collectJsonFiles_(DriveApp.getFolderById(HEALTH_FOLDER_ID), analysisFrom, now, 'health');
     const fitness = collectJsonFiles_(DriveApp.getFolderById(FITNESS_FOLDER_ID), analysisFrom, now, 'fitness');
@@ -629,6 +638,7 @@ function getOpenAiKey_(){return PropertiesService.getScriptProperties().getPrope
 function getOpenAiModel_(){return PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL')||'gpt-5-mini';}
 function parseDate_(v){if(v instanceof Date)return v;let s=String(v||'');if(!s)return new Date(0);s=s.replace(/ (\+\d{4})$/,' $1').replace(/ ([+-]\d{2})(\d{2})$/,' $1:$2');const d=new Date(s);return isNaN(d.getTime())?new Date(0):d;}
 function formatIso_(d){return Utilities.formatDate(parseDate_(d),TIME_ZONE,"yyyy-MM-dd'T'HH:mm:ssXXX");}
+function startOfDay_(d){const x=new Date(parseDate_(d).getTime());x.setHours(0,0,0,0);return x;}
 function addDays_(d,n){const x=new Date(parseDate_(d).getTime());x.setDate(x.getDate()+n);return x;}
 function sum_(a){return (a||[]).reduce((s,v)=>s+(isFinite(Number(v))?Number(v):0),0);}
 function avg_(a){const b=(a||[]).filter(v=>isFinite(Number(v))).map(Number);return b.length?sum_(b)/b.length:null;}

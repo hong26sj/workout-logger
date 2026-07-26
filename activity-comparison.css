@@ -1,41 +1,90 @@
 .activity-metric-with-comparison{
-  position:relative;
-  min-height:74px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:
+    "label comparison"
+    "value comparison";
+  column-gap:7px;
+  row-gap:5px;
+  align-items:start;
+  min-height:82px;
   padding:10px;
-  overflow:hidden;
+  overflow:visible;
 }
-.activity-metric-copy{
+
+.activity-metric-label{
+  grid-area:label;
   min-width:0;
-  padding-right:78px;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:900;
+  line-height:1.25;
+  word-break:keep-all;
+  overflow-wrap:normal;
 }
+
+.activity-metric-value{
+  grid-area:value;
+  min-width:0;
+  display:block;
+  align-self:end;
+  font-size:14px;
+  line-height:1.25;
+  white-space:nowrap;
+}
+
 .activity-comparison{
-  position:absolute;
-  top:10px;
-  right:10px;
-  max-width:82px;
+  grid-area:comparison;
+  position:static;
+  align-self:start;
+  min-width:0;
+  max-width:92px;
   text-align:right;
   line-height:1.15;
 }
+
 .activity-comparison strong{
   display:block;
-  font-size:11px;
+  font-size:10px;
   font-weight:900;
   white-space:nowrap;
 }
-.activity-comparison span{
+
+.activity-comparison > span{
   display:block;
-  margin-top:3px;
-  font-size:9px;
+  margin-top:4px;
+  font-size:8px;
   font-weight:800;
   color:var(--muted);
   white-space:nowrap;
 }
+
+.activity-comparison-cardio strong span{
+  display:block;
+}
+
+.activity-comparison-cardio strong span + span{
+  margin-top:2px;
+}
+
 .activity-comparison.comparison-positive strong{color:#16a34a}
 .activity-comparison.comparison-negative strong{color:#dc2626}
 .activity-comparison.comparison-neutral strong{color:#6b7280}
+
+.mini-chart-single{
+  padding:14px 0 5px;
+  color:var(--muted);
+  font-size:12px;
+}
+
 @media(max-width:380px){
-  .activity-metric-copy{padding-right:70px}
-  .activity-comparison{right:8px;max-width:74px}
-  .activity-comparison strong{font-size:10px}
-  .activity-comparison span{font-size:8px}
+  .activity-metric-with-comparison{
+    column-gap:5px;
+    padding:9px 8px;
+  }
+  .activity-metric-label{font-size:9px}
+  .activity-metric-value{font-size:13px}
+  .activity-comparison{max-width:82px}
+  .activity-comparison strong{font-size:9px}
+  .activity-comparison > span{font-size:8px}
 }

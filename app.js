@@ -519,23 +519,37 @@ function analysisSection(title, content, open=false){
   return `<details class="analysis-block"${open?' open':''}><summary>${escapeHtml(title)}</summary><div class="analysis-body">${content}</div></details>`;
 }
 function trendLineSvg(series,key,color,label,unit='',digits=1){
-  const rows=(series||[]);
-  const points=rows.map((x,i)=>({raw:x&&x[key],i})).filter(p=>p.raw!==null&&p.raw!==undefined&&isFinite(Number(p.raw))).map(p=>({...p,n:Number(p.raw)}));
-  if(points.length<2) return `<div class="mini-chart-empty">최근 7일 데이터가 부족합니다.</div>`;
-  const min=Math.min(...points.map(p=>p.n));
-  const max=Math.max(...points.map(p=>p.n));
+  const points=(series||[])
+    .map(row=>({raw:row&&row[key],date:row&&row.date}))
+    .filter(point=>point.raw!==null&&point.raw!==undefined&&isFinite(Number(point.raw)))
+    .map(point=>({...point,n:Number(point.raw)}));
+
+  if(!points.length) return `<div class="mini-chart-empty">최근 7일 측정값이 없습니다.</div>`;
+  if(points.length===1) return `<div class="mini-chart-single">최근 측정값 ${formatNumber(points[0].n,digits)}${unit}</div>`;
+
+  const min=Math.min(...points.map(point=>point.n));
+  const max=Math.max(...points.map(point=>point.n));
   const range=max-min || 1;
-  const denom=Math.max(rows.length-1,1);
-  const scaled=points.map(p=>({x:p.i*(300/denom),y:36-((p.n-min)/range)*24,n:p.n}));
-  const poly=scaled.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const first=scaled[0], last=scaled[scaled.length-1];
+  const left=8;
+  const right=292;
+  const bottom=36;
+  const chartHeight=24;
+  const denom=Math.max(points.length-1,1);
+  const scaled=points.map((point,index)=>({
+    x:left+index*((right-left)/denom),
+    y:bottom-((point.n-min)/range)*chartHeight,
+    n:point.n
+  }));
+  const poly=scaled.map(point=>`${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  const first=scaled[0];
+  const last=scaled[scaled.length-1];
+
   return `<svg class="mini-chart" viewBox="0 0 300 44" role="img" aria-label="${escapeHtml(label)} 최근 7일 추세">
-    <line x1="0" y1="36" x2="300" y2="36" stroke="#e5e7eb"/>
-    <polyline points="${poly}" fill="none" stroke="${color}" stroke-width="3"/>
-    <circle cx="${first.x.toFixed(1)}" cy="${first.y.toFixed(1)}" r="3" fill="${color}"/>
-    <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="3" fill="${color}"/>
-    <text x="0" y="12" font-size="10" fill="#6b7280">${formatNumber(first.n,digits)}${unit}</text>
-    <text x="244" y="12" font-size="10" fill="#6b7280">${formatNumber(last.n,digits)}${unit}</text>
+    <line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="#e5e7eb"/>
+    <polyline points="${poly}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    ${scaled.map(point=>`<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3" fill="${color}"/>`).join('')}
+    <text x="${first.x.toFixed(1)}" y="12" text-anchor="start" font-size="10" fill="#6b7280">${formatNumber(first.n,digits)}${unit}</text>
+    <text x="${last.x.toFixed(1)}" y="12" text-anchor="end" font-size="10" fill="#6b7280">${formatNumber(last.n,digits)}${unit}</text>
   </svg>`;
 }
 function trendCard(label,current,delta,series,key,color,unit='',digits=1){

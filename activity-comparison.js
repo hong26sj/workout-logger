@@ -23,7 +23,7 @@
     if (seconds < 60) return `${seconds}초`;
     const min = Math.floor(seconds / 60);
     const sec = String(seconds % 60).padStart(2, '0');
-    return `${min}'${sec}\"`;
+    return `${min}'${sec}"`;
   }
 
   function comparisonClass(item) {
@@ -33,23 +33,21 @@
     return 'comparison-neutral';
   }
 
-  function comparisonHtml(item, formatter, caption = '이전 대비') {
+  function comparisonHtml(item, formatter, caption = '직전 평균') {
     if (!item || !isFiniteNumber(item.change)) return '';
     const change = Number(item.change);
     const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '–';
     return `<div class="activity-comparison ${comparisonClass(item)}">
       <strong>${arrow} ${formatter(item)}</strong>
-      <span>(${caption})</span>
+      <span>${caption}</span>
     </div>`;
   }
 
   function metricCard(label, valueHtml, comparison) {
     return `<div class="activity-metric activity-metric-with-comparison">
-      <div class="activity-metric-copy">
-        <span>${label}</span>
-        <strong>${valueHtml}</strong>
-      </div>
+      <span class="activity-metric-label">${label}</span>
       ${comparison}
+      <strong class="activity-metric-value">${valueHtml}</strong>
     </div>`;
   }
 
@@ -60,13 +58,13 @@
     const steps = comparisonHtml(
       comparison.steps_daily_average,
       item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}보`,
-      '일평균 대비'
+      '일평균'
     );
 
     const distance = comparisonHtml(
       comparison.distance_km,
       item => `${signedPrefix(item.change)}${formatAbs(item.change, 1)}km/일`,
-      '일평균 대비'
+      '일평균'
     );
 
     let cardioChange = '';
@@ -77,35 +75,34 @@
       const basis = sessionChange || minutesChange;
       const basisChange = Number(basis.change || 0);
       const arrow = basisChange > 0 ? '▲' : basisChange < 0 ? '▼' : '–';
-      const parts = [];
-      if (sessionChange && isFiniteNumber(sessionChange.change)) {
-        parts.push(`${signedPrefix(sessionChange.change)}${formatAbs(sessionChange.change, 1)}회`);
-      }
-      if (minutesChange && isFiniteNumber(minutesChange.change)) {
-        parts.push(`${signedPrefix(minutesChange.change)}${formatAbs(minutesChange.change, 0)}분`);
-      }
-      cardioChange = `<div class="activity-comparison ${comparisonClass(basis)}">
-        <strong>${arrow} ${parts.join(' · ')}</strong>
-        <span>(7일 환산 대비)</span>
+      const sessionText = sessionChange && isFiniteNumber(sessionChange.change)
+        ? `${signedPrefix(sessionChange.change)}${formatAbs(sessionChange.change, 1)}회`
+        : '';
+      const minuteText = minutesChange && isFiniteNumber(minutesChange.change)
+        ? `${signedPrefix(minutesChange.change)}${formatAbs(minutesChange.change, 0)}분`
+        : '';
+      cardioChange = `<div class="activity-comparison activity-comparison-cardio ${comparisonClass(basis)}">
+        <strong><span>${arrow} ${sessionText}</span>${minuteText ? `<span>${minuteText}</span>` : ''}</strong>
+        <span>7일 환산</span>
       </div>`;
     }
 
     const pace = comparisonHtml(
       comparison.average_pace_min_per_km,
       item => `${signedPrefix(item.change)}${formatPaceDelta(item.change)}`,
-      '평균 대비'
+      '직전 평균'
     );
 
     const heart = comparisonHtml(
       comparison.average_heart_rate,
       item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}bpm`,
-      '평균 대비'
+      '직전 평균'
     );
 
     const kcal = comparisonHtml(
       comparison.active_kcal,
       item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}kcal/일`,
-      '일평균 대비'
+      '일평균'
     );
 
     return `<div class="activity-summary">
