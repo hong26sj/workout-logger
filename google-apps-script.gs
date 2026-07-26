@@ -309,14 +309,37 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
 }
 
 
-function buildMetricComparison_(current, previous, lowerIsBetter) {
-  const currentNum = Number(current);
-  const previousNum = Number(previous);
+function hasNumber_(value) {
+  return value !== null && value !== undefined && value !== '' && isFinite(Number(value));
+}
 
-  if (!isFinite(currentNum) || !isFinite(previousNum)) {
+function periodDaysFromStats_(stats) {
+  const coverage = stats && stats.coverage || {};
+  const from = parseDate_(coverage.from);
+  const to = parseDate_(coverage.to);
+
+  if (from.getTime() > 0 && to.getTime() >= from.getTime()) {
+    return Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86400000));
+  }
+
+  const recordedDays = Number(coverage.days_with_health_data);
+  return isFinite(recordedDays) && recordedDays > 0 ? recordedDays : 1;
+}
+
+function normalizeRate_(value, periodDays, targetDays) {
+  if (!hasNumber_(value) || !hasNumber_(periodDays) || Number(periodDays) <= 0) {
+    return null;
+  }
+  return round_(Number(value) / Number(periodDays) * Number(targetDays || 1), 2);
+}
+
+function buildMetricComparison_(current, previous, lowerIsBetter, basis) {
+  if (!hasNumber_(current) || !hasNumber_(previous)) {
     return null;
   }
 
+  const currentNum = Number(current);
+  const previousNum = Number(previous);
   const change = round_(currentNum - previousNum, 2);
   const changePct = previousNum !== 0
     ? round_((change / Math.abs(previousNum)) * 100, 1)
@@ -327,7 +350,7 @@ function buildMetricComparison_(current, previous, lowerIsBetter) {
   if (change < 0) direction = 'down';
 
   let improved = null;
-  if (change !== 0) {
+  if (change !== 0 && lowerIsBetter !== null && lowerIsBetter !== undefined) {
     improved = lowerIsBetter ? change < 0 : change > 0;
   }
 
@@ -337,7 +360,8 @@ function buildMetricComparison_(current, previous, lowerIsBetter) {
     change: change,
     change_pct: changePct,
     direction: direction,
-    improved: improved
+    improved: improved,
+    basis: basis || 'direct'
   };
 }
 
@@ -352,43 +376,99 @@ function buildActivityComparison_(currentStats, previousAnalysis) {
   const currentCardio = currentActivity.cardio_summary || {};
   const previousCardio = previousActivity.cardio_summary || {};
 
+  const currentDays = periodDaysFromStats_(currentStats);
+  const previousDays = periodDaysFromStats_(previousStats);
+
+  const currentDistanceDaily = normalizeRate_(
+    currentCardio.distance_km ?? currentActivity.distance_total_km,
+    currentDays,
+    1
+  );
+  const previousDistanceDaily = normalizeRate_(
+    previousCardio.distance_km ?? previousActivity.distance_total_km,
+    previousDays,
+    1
+  );
+
+  const currentSessionsWeekly = normalizeRate_(
+    currentCardio.session_count ?? currentFitness.session_count,
+    currentDays,
+    7
+  );
+  const previousSessionsWeekly = normalizeRate_(
+    previousCardio.session_count ?? previousFitness.session_count,
+    previousDays,
+    7
+  );
+
+  const currentMinutesWeekly = normalizeRate_(
+    currentCardio.total_minutes ?? currentFitness.total_minutes,
+    currentDays,
+    7
+  );
+  const previousMinutesWeekly = normalizeRate_(
+    previousCardio.total_minutes ?? previousFitness.total_minutes,
+    previousDays,
+    7
+  );
+
+  const currentKcalDaily = normalizeRate_(
+    currentCardio.active_kcal ?? currentActivity.active_energy_total_kcal,
+    currentDays,
+    1
+  );
+  const previousKcalDaily = normalizeRate_(
+    previousCardio.active_kcal ?? previousActivity.active_energy_total_kcal,
+    previousDays,
+    1
+  );
+
   return {
     compared_to_analysis_id: previousAnalysis.analysis_id || null,
     compared_to_created_at: previousAnalysis.created_at || null,
+    current_period_days: currentDays,
+    previous_period_days: previousDays,
     steps_daily_average: buildMetricComparison_(
       currentActivity.steps_daily_average,
       previousActivity.steps_daily_average,
-      false
+      false,
+      'daily_average'
     ),
     distance_km: buildMetricComparison_(
-      currentCardio.distance_km ?? currentActivity.distance_total_km,
-      previousCardio.distance_km ?? previousActivity.distance_total_km,
-      false
+      currentDistanceDaily,
+      previousDistanceDaily,
+      false,
+      'daily_average'
     ),
     cardio_session_count: buildMetricComparison_(
-      currentCardio.session_count ?? currentFitness.session_count,
-      previousCardio.session_count ?? previousFitness.session_count,
-      false
+      currentSessionsWeekly,
+      previousSessionsWeekly,
+      false,
+      'weekly_equivalent'
     ),
     cardio_minutes: buildMetricComparison_(
-      currentCardio.total_minutes ?? currentFitness.total_minutes,
-      previousCardio.total_minutes ?? previousFitness.total_minutes,
-      false
+      currentMinutesWeekly,
+      previousMinutesWeekly,
+      false,
+      'weekly_equivalent'
     ),
     average_pace_min_per_km: buildMetricComparison_(
       currentCardio.avg_pace_min_per_km,
       previousCardio.avg_pace_min_per_km,
-      true
+      true,
+      'direct_average'
     ),
     average_heart_rate: buildMetricComparison_(
       currentCardio.avg_hr,
       previousCardio.avg_hr,
-      true
+      null,
+      'direct_average'
     ),
     active_kcal: buildMetricComparison_(
-      currentCardio.active_kcal ?? currentActivity.active_energy_total_kcal,
-      previousCardio.active_kcal ?? previousActivity.active_energy_total_kcal,
-      false
+      currentKcalDaily,
+      previousKcalDaily,
+      false,
+      'daily_average'
     )
   };
 }

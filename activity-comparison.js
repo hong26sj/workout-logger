@@ -33,13 +33,13 @@
     return 'comparison-neutral';
   }
 
-  function comparisonHtml(item, formatter) {
+  function comparisonHtml(item, formatter, caption = '이전 대비') {
     if (!item || !isFiniteNumber(item.change)) return '';
     const change = Number(item.change);
     const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '–';
     return `<div class="activity-comparison ${comparisonClass(item)}">
       <strong>${arrow} ${formatter(item)}</strong>
-      <span>(이전 대비)</span>
+      <span>(${caption})</span>
     </div>`;
   }
 
@@ -59,12 +59,14 @@
 
     const steps = comparisonHtml(
       comparison.steps_daily_average,
-      item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}보`
+      item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}보`,
+      '일평균 대비'
     );
 
     const distance = comparisonHtml(
       comparison.distance_km,
-      item => `${signedPrefix(item.change)}${formatAbs(item.change, 1)}km`
+      item => `${signedPrefix(item.change)}${formatAbs(item.change, 1)}km/일`,
+      '일평균 대비'
     );
 
     let cardioChange = '';
@@ -77,30 +79,33 @@
       const arrow = basisChange > 0 ? '▲' : basisChange < 0 ? '▼' : '–';
       const parts = [];
       if (sessionChange && isFiniteNumber(sessionChange.change)) {
-        parts.push(`${signedPrefix(sessionChange.change)}${formatAbs(sessionChange.change, 0)}회`);
+        parts.push(`${signedPrefix(sessionChange.change)}${formatAbs(sessionChange.change, 1)}회`);
       }
       if (minutesChange && isFiniteNumber(minutesChange.change)) {
         parts.push(`${signedPrefix(minutesChange.change)}${formatAbs(minutesChange.change, 0)}분`);
       }
       cardioChange = `<div class="activity-comparison ${comparisonClass(basis)}">
         <strong>${arrow} ${parts.join(' · ')}</strong>
-        <span>(이전 대비)</span>
+        <span>(7일 환산 대비)</span>
       </div>`;
     }
 
     const pace = comparisonHtml(
       comparison.average_pace_min_per_km,
-      item => `${signedPrefix(item.change)}${formatPaceDelta(item.change)}`
+      item => `${signedPrefix(item.change)}${formatPaceDelta(item.change)}`,
+      '평균 대비'
     );
 
     const heart = comparisonHtml(
       comparison.average_heart_rate,
-      item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}bpm`
+      item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}bpm`,
+      '평균 대비'
     );
 
     const kcal = comparisonHtml(
       comparison.active_kcal,
-      item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}kcal`
+      item => `${signedPrefix(item.change)}${formatAbs(item.change, 0)}kcal/일`,
+      '일평균 대비'
     );
 
     return `<div class="activity-summary">
