@@ -162,20 +162,20 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
   const metricDailyAvg=(day,name)=>round_(avg_(daily[day]&&daily[day][name]||[]),2);
   const metricDailySum=(day,name)=>round_(sum_(daily[day]&&daily[day][name]||[]),2);
   const normalizePercent=(v)=>v!==null&&v!==undefined&&isFinite(Number(v))&&Number(v)>0&&Number(v)<=1?round_(Number(v)*100,1):v;
-  const recentDays=[];
-  const cursor=new Date(periodTo.getTime());
-  cursor.setHours(0,0,0,0);
-  for(let i=6;i>=0;i--){
-    const d=addDays_(cursor,-i);
-    recentDays.push(Utilities.formatDate(d,TIME_ZONE,'yyyy-MM-dd'));
+  const periodDays=[];
+  const cursor=startOfDay_(periodFrom);
+  const endDay=startOfDay_(periodTo);
+  while(cursor<=endDay){
+    periodDays.push(Utilities.formatDate(cursor,TIME_ZONE,'yyyy-MM-dd'));
+    cursor.setDate(cursor.getDate()+1);
   }
-  const weeklyBodySeries=recentDays.map(d=>({
+  const weeklyBodySeries=periodDays.map(d=>({
     date:d,
     weight_kg:metricDailyAvg(d,'weight_body_mass'),
     body_fat_pct:normalizePercent(metricDailyAvg(d,'body_fat_percentage')),
     bmi:metricDailyAvg(d,'body_mass_index')
   }));
-  const dailyActivitySeries=recentDays.map(d=>({
+  const dailyActivitySeries=periodDays.map(d=>({
     date:d,
     steps:round_(metricDailySum(d,'step_count'),0),
     walking_running_distance_km:metricDailySum(d,'walking_running_distance'),

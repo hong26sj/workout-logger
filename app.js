@@ -529,7 +529,7 @@ function trendLineSvg(series,key,color,label,unit='',digits=1){
     .filter(point=>point.raw!==null&&point.raw!==undefined&&isFinite(Number(point.raw)))
     .map(point=>({...point,n:Number(point.raw)}));
 
-  if(!points.length) return `<div class="mini-chart-empty">최근 7일 측정값이 없습니다.</div>`;
+  if(!points.length) return `<div class="mini-chart-empty">분석 기간 측정값이 없습니다.</div>`;
   if(points.length===1) return `<div class="mini-chart-single">최근 측정값 ${formatNumber(points[0].n,digits)}${unit}</div>`;
 
   const min=Math.min(...points.map(point=>point.n));
@@ -549,7 +549,7 @@ function trendLineSvg(series,key,color,label,unit='',digits=1){
   const first=scaled[0];
   const last=scaled[scaled.length-1];
 
-  return `<svg class="mini-chart" viewBox="0 0 300 44" role="img" aria-label="${escapeHtml(label)} 최근 7일 추세">
+  return `<svg class="mini-chart" viewBox="0 0 300 44" role="img" aria-label="${escapeHtml(label)} 분석 기간 추세">
     <line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="#e5e7eb"/>
     <polyline points="${poly}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
     ${scaled.map(point=>`<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3" fill="${color}"/>`).join('')}
@@ -561,7 +561,7 @@ function trendCard(label,current,delta,series,key,color,unit='',digits=1){
   return `<div class="trend-card">
     <div class="trend-head">
       <div><div class="trend-label">${escapeHtml(label)}</div><div class="trend-value">${formatMetric(current===null?null:formatNumber(current,digits),unit)}</div></div>
-      <div class="trend-delta">7일 ${formatDelta(delta,unit,digits)}</div>
+      <div class="trend-delta">변화 ${formatDelta(delta,unit,digits)}</div>
     </div>
     ${trendLineSvg(series,key,color,label,unit,digits)}
   </div>`;
@@ -642,7 +642,7 @@ function renderLatestAnalysis(analysis){
       ${trendCard('BMI',body.bmi_latest,body.bmi_latest!==null&&firstBmi!==null?body.bmi_latest-firstBmi:null,series,'bmi','#16a34a','',1)}
     </div>
     <div class="chart-card">
-      <div class="chart-title">활동량 종합 <span>최근 7일</span></div>
+      <div class="chart-title">활동량 종합 <span>분석 기간</span></div>
       ${activitySummaryHtml(activity,stats.fitness||{})}
     </div>
     <div class="chart-card">
