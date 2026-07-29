@@ -36,6 +36,11 @@ function localDateValue(d = new Date()) {
   const p=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
 }
+function addLocalDays(d, days){
+  const x=new Date(d);
+  x.setDate(x.getDate()+days);
+  return x;
+}
 function selectedWorkoutDate(){
   return $("workoutDate").value || localDateValue();
 }
@@ -497,7 +502,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-const analysisState={latest:null,running:false};
+const analysisState={latest:null,running:false,fromDateTouched:false};
 function formatMetric(v,suffix=''){return v===null||v===undefined?'자료 없음':`${v}${suffix}`;}
 function formatNumber(v,digits=0){
   if(v===null||v===undefined||!isFinite(Number(v))) return '-';
@@ -660,13 +665,28 @@ async function loadLatestAnalysis(showMessage=true){
   $("analysisStatus").className='sync-status status-loading';$("analysisStatus").textContent='마지막 분석을 불러오는 중...';
   try{const sep=url.includes('?')?'&':'?';const r=await fetch(`${url}${sep}action=latest_analysis&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();if(!j.ok)throw new Error(j.error||'조회 실패');renderLatestAnalysis(j.analysis);$("analysisStatus").className='sync-status status-ok';$("analysisStatus").textContent=j.analysis?`마지막 분석: ${new Date(j.analysis.created_at).toLocaleString('ko-KR')}`:'아직 분석 기록이 없습니다.';if(showMessage)toast('마지막 분석을 불러왔습니다.');}catch(e){$("analysisStatus").className='sync-status status-warn';$("analysisStatus").textContent='분석 기록을 불러오지 못했습니다.';if(showMessage)toast('분석 불러오기 실패');}
 }
+function defaultAnalysisFromDate(){
+  const latest=analysisState.latest;
+  if(latest){
+    const basis=new Date(latest.period?.to||latest.created_at);
+    if(!Number.isNaN(basis.getTime())) return localDateValue(addLocalDays(basis,-1));
+  }
+  return localDateValue(addLocalDays(new Date(),-6));
+}
+function resetAnalysisDialog(){
+  $("analysisRequest").value='';
+  $("forceAnalysis").checked=false;
+  $("analysisFromDate").value=defaultAnalysisFromDate();
+  analysisState.fromDateTouched=false;
+}
 async function executeAiAnalysis(){
   if(analysisState.running)return;
   analysisState.running=true;$("runAnalysisBtn").disabled=true;$("confirmAnalysisBtn").disabled=true;$("analysisStatus").className='sync-status status-loading';$("analysisStatus").textContent='Health·Fitness·근력운동을 집계하고 OpenAI가 분석 중입니다. 최대 1~2분 걸릴 수 있습니다.';
-  const payload={action:'analyze',additional_request:$("analysisRequest").value.trim(),force:$("forceAnalysis").checked};
+  const payload={action:'analyze',additional_request:$("analysisRequest").value.trim(),force:$("forceAnalysis").checked,analysis_from:$("analysisFromDate").value,analysis_from_manual:analysisState.fromDateTouched};
   try{const r=await fetch(getGasUrl(),{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(payload),redirect:'follow'});const j=await r.json();if(!j.ok)throw new Error(j.error||'분석 실패');renderLatestAnalysis(j.analysis);$("analysisStatus").className='sync-status status-ok';$("analysisStatus").textContent=j.unchanged?(j.message||'새 기록이 없습니다.'):`분석 완료: ${new Date(j.analysis.created_at).toLocaleString('ko-KR')}`;toast(j.unchanged?'기존 분석을 표시합니다.':'AI 분석을 저장했습니다.');}catch(e){$("analysisStatus").className='sync-status status-warn';$("analysisStatus").textContent=`AI 분석 실패: ${e.message}`;toast('AI 분석에 실패했습니다.');}finally{analysisState.running=false;$("runAnalysisBtn").disabled=false;$("confirmAnalysisBtn").disabled=false;}
 }
-$("runAnalysisBtn").onclick=()=>{$("analysisRequest").value='';$("forceAnalysis").checked=false;$("analysisDialog").showModal();};
+$("runAnalysisBtn").onclick=()=>{resetAnalysisDialog();$("analysisDialog").showModal();};
 $("confirmAnalysisBtn").onclick=(e)=>{e.preventDefault();$("analysisDialog").close();executeAiAnalysis();};
 $("refreshAnalysisBtn").onclick=()=>loadLatestAnalysis(true);
+$("analysisFromDate").onchange=()=>{analysisState.fromDateTouched=true;};
 loadLatestAnalysis(false);

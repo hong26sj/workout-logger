@@ -16,7 +16,7 @@ function doPost(e) {
     if (!e || !e.postData || !e.postData.contents) throw new Error('전송된 데이터가 없습니다.');
     const data = JSON.parse(e.postData.contents);
     if (data && data.action === 'analyze') {
-      return jsonResponse(runAiAnalysis_(data.additional_request || '', data.force === true));
+      return jsonResponse(runAiAnalysis_(data.additional_request || '', data.force === true, data.analysis_from || '', data.analysis_from_manual === true));
     }
     if (data && data.action === 'delete_strength') {
       return jsonResponse(deleteStrengthFile_(data.file_id));
@@ -67,7 +67,7 @@ function listStrengthSessions_() {
   return {ok:true,count:sessions.length,sessions:sessions.slice(-300)};
 }
 
-function runAiAnalysis_(additionalRequest, force) {
+function runAiAnalysis_(additionalRequest, force, analysisFromInput, analysisFromManual) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) throw new Error('다른 AI 분석이 진행 중입니다. 잠시 후 다시 시도하세요.');
   try {
@@ -80,17 +80,17 @@ function runAiAnalysis_(additionalRequest, force) {
     const incrementalReadFrom = latest
       ? addDays_(previousAnalysisTime,-OVERLAP_DAYS)
       : addDays_(now,-INITIAL_LOOKBACK_DAYS);
-    const analysisFrom = incrementalReadFrom < recentSevenDayFrom
-      ? incrementalReadFrom
-      : recentSevenDayFrom;
-    const periodFrom = recentSevenDayFrom;
+    const defaultPeriodFrom = latest ? startOfDay_(addDays_(previousAnalysisTime,-OVERLAP_DAYS)) : recentSevenDayFrom;
+    const requestedPeriodFrom = normalizeAnalysisFrom_(analysisFromInput, defaultPeriodFrom, now);
+    const periodFrom = requestedPeriodFrom;
+    const analysisFrom = requestedPeriodFrom < incrementalReadFrom ? requestedPeriodFrom : incrementalReadFrom;
 
     const health = collectJsonFiles_(DriveApp.getFolderById(HEALTH_FOLDER_ID), analysisFrom, now, 'health');
     const fitness = collectJsonFiles_(DriveApp.getFolderById(FITNESS_FOLDER_ID), analysisFrom, now, 'fitness');
     const strength = collectJsonFiles_(DriveApp.getFolderById(STRENGTH_FOLDER_ID), analysisFrom, now, 'strength');
 
     const newestDataTime = newestTimestamp_(health.concat(fitness).concat(strength));
-    if (!force && latest && newestDataTime && newestDataTime <= parseDate_(latest.period && latest.period.to || latest.created_at).getTime() && !String(additionalRequest||'').trim()) {
+    if (!force && !analysisFromManual && latest && newestDataTime && newestDataTime <= parseDate_(latest.period && latest.period.to || latest.created_at).getTime() && !String(additionalRequest||'').trim()) {
       return {ok:true,unchanged:true,message:'마지막 분석 이후 새로운 기록이 없습니다.',analysis:latest};
     }
 
@@ -109,7 +109,7 @@ function runAiAnalysis_(additionalRequest, force) {
       previous_analysis_id:latest ? latest.analysis_id || null : null,
       user_goal:'weight_loss',
       additional_request:String(additionalRequest||'').trim(),
-      period:{from:formatIso_(periodFrom),to:createdAt,data_read_from:formatIso_(analysisFrom)},
+      period:{from:formatIso_(periodFrom),to:createdAt,data_read_from:formatIso_(analysisFrom),requested_from:String(analysisFromInput||'').trim()||null},
       data_sources:{health_files:health.length,fitness_files:fitness.length,strength_files:strength.length},
       statistics:stats,
       activity_comparison:activityComparison,
@@ -637,6 +637,7 @@ function getOrCreateFolder_(parent,name){const f=parent.getFoldersByName(name);r
 function getOpenAiKey_(){return PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY')||'';}
 function getOpenAiModel_(){return PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL')||'gpt-5-mini';}
 function parseDate_(v){if(v instanceof Date)return v;let s=String(v||'');if(!s)return new Date(0);s=s.replace(/ (\+\d{4})$/,' $1').replace(/ ([+-]\d{2})(\d{2})$/,' $1:$2');const d=new Date(s);return isNaN(d.getTime())?new Date(0):d;}
+function normalizeAnalysisFrom_(value, fallback, now){const raw=String(value||'').trim();const parsed=raw?parseDate_(raw+(raw.length===10?'T00:00:00+09:00':'')):parseDate_(fallback);let d=startOfDay_(parsed.getTime()>0?parsed:fallback);const today=startOfDay_(now);if(d>today)d=today;return d;}
 function formatIso_(d){return Utilities.formatDate(parseDate_(d),TIME_ZONE,"yyyy-MM-dd'T'HH:mm:ssXXX");}
 function startOfDay_(d){const x=new Date(parseDate_(d).getTime());x.setHours(0,0,0,0);return x;}
 function addDays_(d,n){const x=new Date(parseDate_(d).getTime());x.setDate(x.getDate()+n);return x;}
