@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'workout-logger-ai-v10';
+const CACHE_VERSION = 'workout-logger-ai-v11';
 const APP_SHELL = [
   './',
   './index.html',

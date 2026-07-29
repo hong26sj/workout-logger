@@ -88,6 +88,20 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
   text-align:left;
 }
 
+#analysisFromDate{
+  -webkit-appearance:none;
+  appearance:none;
+  display:block;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  height:48px;
+  min-height:0;
+  padding:11px 12px;
+  line-height:24px;
+  font-weight:600;
+  text-align:left;
+}
 .history-button-row{
   display:flex;
   gap:6px;
