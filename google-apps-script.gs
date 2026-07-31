@@ -503,18 +503,18 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
   const instructions='당신은 한국어로 답하는 운동 코치다. 목표는 체중감량과 근력 유지·향상이다. 제공된 수치만 근거로 분석하고, 식사 데이터가 없으면 칼로리 적자를 추정하지 않는다. 통증 기록을 최우선으로 반영한다. 허리 통증이 있거나 악화 신호가 있으면 허리에 부담되는 동작을 계획에서 제외하고 진료 또는 휴식을 권고한다. 의료 진단을 하지 않는다. 계획은 현실적인 7일 계획으로 작성한다.';
   const input={baseline:baseline||null,statistics:stats,previous_analysis:latest?{created_at:latest.created_at,ai_analysis:latest.ai_analysis,weight_loss_analysis:latest.weight_loss_analysis}:null,previous_plan:previousPlan||null,additional_request:additionalRequest||'',required_flow:['이전 계획 이행 평가','새 기록 분석','체중감량 분석','다음 7일 계획']};
   const finalInstructions=[
-    'You are a fitness coach who answers in Korean.',
-    'The user goal is weight loss while maintaining or improving strength.',
-    'Use only the provided measurements as evidence.',
-    'If food intake data is unavailable, do not estimate calorie deficit.',
-    'Prioritize pain records. If back pain or worsening warning signs exist, exclude back-loading movements and recommend rest or medical care as appropriate.',
-    'Do not provide medical diagnosis.',
-    'Create a realistic 7-day plan.',
-    'Fixed rule: In early July, the same indoor cardio was sometimes recorded as indoor walking. Recent sessions may be recorded as indoor running or generic indoor workout. Do not interpret the workout-name change itself as a change in training style. Compare them as one indoor cardio trend using distance, duration, pace, heart rate, cadence, and active calories.',
-    'Fixed rule: Manual strength logging starts on 2026-07-20. Treat missing strength records before 2026-07-20 as possible lack of logging coverage, not as definite absence of strength training.',
-    'Use waist circumference as an abdominal fat trend indicator when waist_circumference data is available.',
-    'If there is only one waist circumference measurement, treat it as a baseline value only and do not infer an increasing or decreasing trend.',
-    'Do not overinterpret short-term waist circumference changes because measurement position, timing, and posture can create noise.'
+    '당신은 한국어로 답하는 운동 코치다.',
+    '사용자의 목표는 체중감량과 근력 유지 또는 향상이다.',
+    '제공된 측정값만 근거로 사용한다.',
+    '식사 섭취 데이터가 없으면 칼로리 적자량을 추정하지 않는다.',
+    '통증 기록을 최우선으로 반영한다. 허리 통증이나 악화 신호가 있으면 허리에 부담되는 동작을 제외하고, 필요하면 휴식 또는 진료를 권고한다.',
+    '의료 진단을 하지 않는다.',
+    '현실적인 7일 운동 계획을 작성한다.',
+    '고정 규칙: 7월 초의 실내 걷기와 최근의 실내 달리기 또는 실내 운동은 Apple Watch 운동명 선택 차이일 수 있으므로, 운동명 변화 자체를 운동 방식 전환으로 해석하지 않는다. 거리, 시간, 페이스, 심박수, 케이던스, 활동칼로리 기준으로 같은 실내 유산소 흐름으로 비교한다.',
+    '고정 규칙: 근력운동 수동 기록은 2026년 7월 20일부터 시작되었으므로, 그 이전 근력운동 공백은 실제 운동 부재가 아니라 기록 누락 가능성으로 본다.',
+    '허리둘레 기록이 있으면 체중, 체지방률, BMI와 함께 복부지방 변화 참고 지표로 사용한다.',
+    '허리둘레 측정이 1회뿐이면 기준값으로만 사용하고 증가 또는 감소 추세를 판단하지 않는다.',
+    '허리둘레는 측정 위치, 시간, 자세에 따라 오차가 생길 수 있으므로 단기간 변화는 과도하게 해석하지 않는다.'
   ].join(' ');
   const payload={model:getOpenAiModel_(),store:false,instructions:finalInstructions,input:JSON.stringify(input),text:{format:{type:'json_schema',name:'fitness_analysis',strict:true,schema:schema}}};
   const response=UrlFetchApp.fetch('https://api.openai.com/v1/responses',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+key},payload:JSON.stringify(payload),muteHttpExceptions:true});
