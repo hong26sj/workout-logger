@@ -175,6 +175,10 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     body_fat_pct:normalizePercent(metricDailyAvg(d,'body_fat_percentage')),
     bmi:metricDailyAvg(d,'body_mass_index')
   }));
+  const weeklyWaistSeries=periodDays.map(d=>({
+    date:d,
+    waist_cm:metricDailyAvg(d,'waist_circumference')
+  }));
   const dailyActivitySeries=periodDays.map(d=>({
     date:d,
     steps:round_(metricDailySum(d,'step_count'),0),
@@ -305,9 +309,13 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
 
   const weightLatest=latestMetric('weight_body_mass');
   const weightFirst=firstMetric('weight_body_mass');
+  const waistMeasurements=(metrics.waist_circumference||[]).length;
+  const waistLatest=latestMetric('waist_circumference');
+  const waistFirst=firstMetric('waist_circumference');
+  const waistChange=waistMeasurements>=2&&waistLatest!==null&&waistFirst!==null?round_(waistLatest-waistFirst,1):null;
   return {
     coverage:{from:formatIso_(periodFrom),to:formatIso_(periodTo),days_with_health_data:days.length},
-    body:{weight_latest_kg:weightLatest,weight_first_kg:weightFirst,weight_change_kg:weightLatest!==null&&weightFirst!==null?round_(weightLatest-weightFirst,2):null,body_fat_latest_pct:normalizePercent(latestMetric('body_fat_percentage')),lean_mass_latest_kg:latestMetric('lean_body_mass'),bmi_latest:latestMetric('body_mass_index'),weight_measurements:(metrics.weight_body_mass||[]).length,weekly_body_series:weeklyBodySeries},
+    body:{weight_latest_kg:weightLatest,weight_first_kg:weightFirst,weight_change_kg:weightLatest!==null&&weightFirst!==null?round_(weightLatest-weightFirst,2):null,body_fat_latest_pct:normalizePercent(latestMetric('body_fat_percentage')),lean_mass_latest_kg:latestMetric('lean_body_mass'),bmi_latest:latestMetric('body_mass_index'),weight_measurements:(metrics.weight_body_mass||[]).length,waist_latest_cm:waistLatest,waist_first_cm:waistFirst,waist_change_cm:waistChange,waist_measurements:waistMeasurements,weekly_body_series:weeklyBodySeries,weekly_waist_series:weeklyWaistSeries},
     activity:{steps_total:round_(sumMetric('step_count'),0),steps_daily_average:round_(avg_(dailySums('step_count')),0),distance_total_km:sumMetric('walking_running_distance'),active_energy_total_kcal:round_(sumMetric('active_energy')/4.184,1),exercise_minutes_total:sumMetric('apple_exercise_time'),stand_minutes_total:sumMetric('apple_stand_time'),daily_activity_series:dailyActivitySeries,cardio_summary:cardioSummary,cardio_sessions:recentCardioWorkouts},
     heart_rate:{resting_hr_average:round_(avg_(dailyAvgs('resting_heart_rate')),1),resting_hr_latest:latestMetric('resting_heart_rate'),walking_hr_average:round_(avg_(dailyAvgs('walking_heart_rate_average')),1),heart_rate_average:round_(avg_(dailyAvgs('heart_rate')),1),oxygen_saturation_latest:latestMetric('oxygen_saturation')},
     fitness:{session_count:workouts.length,total_minutes:round_(workouts.reduce((s,w)=>s+w.duration_min,0),1),active_kcal:round_(workouts.reduce((s,w)=>s+w.active_kcal,0),1),cardio_sessions:recentCardioWorkouts,sessions:workouts.slice(-50)},
@@ -503,7 +511,10 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
     'Do not provide medical diagnosis.',
     'Create a realistic 7-day plan.',
     'Fixed rule: In early July, the same indoor cardio was sometimes recorded as indoor walking. Recent sessions may be recorded as indoor running or generic indoor workout. Do not interpret the workout-name change itself as a change in training style. Compare them as one indoor cardio trend using distance, duration, pace, heart rate, cadence, and active calories.',
-    'Fixed rule: Manual strength logging starts on 2026-07-20. Treat missing strength records before 2026-07-20 as possible lack of logging coverage, not as definite absence of strength training.'
+    'Fixed rule: Manual strength logging starts on 2026-07-20. Treat missing strength records before 2026-07-20 as possible lack of logging coverage, not as definite absence of strength training.',
+    'Use waist circumference as an abdominal fat trend indicator when waist_circumference data is available.',
+    'If there is only one waist circumference measurement, treat it as a baseline value only and do not infer an increasing or decreasing trend.',
+    'Do not overinterpret short-term waist circumference changes because measurement position, timing, and posture can create noise.'
   ].join(' ');
   const payload={model:getOpenAiModel_(),store:false,instructions:finalInstructions,input:JSON.stringify(input),text:{format:{type:'json_schema',name:'fitness_analysis',strict:true,schema:schema}}};
   const response=UrlFetchApp.fetch('https://api.openai.com/v1/responses',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+key},payload:JSON.stringify(payload),muteHttpExceptions:true});
