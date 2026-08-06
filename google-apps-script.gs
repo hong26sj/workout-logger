@@ -175,6 +175,39 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     body_fat_pct:normalizePercent(metricDailyAvg(d,'body_fat_percentage')),
     bmi:metricDailyAvg(d,'body_mass_index')
   }));
+  const movingAverageSeries=(series,key,outKey,windowDays)=>series.map((row,idx)=>{
+    const start=Math.max(0,idx-windowDays+1);
+    const values=series.slice(start,idx+1)
+      .map(x=>x[key])
+      .filter(v=>v!==null&&v!==undefined&&isFinite(Number(v)))
+      .map(Number);
+    const out={date:row.date};
+    out[outKey]=values.length?round_(avg_(values),2):null;
+    out[outKey+'_sample_count']=values.length;
+    return out;
+  });
+  const firstNonNullInSeries=(series,key)=>{
+    for(let i=0;i<series.length;i++){
+      const v=series[i]&&series[i][key];
+      if(v!==null&&v!==undefined&&isFinite(Number(v)))return Number(v);
+    }
+    return null;
+  };
+  const lastNonNullInSeries=(series,key)=>{
+    for(let i=series.length-1;i>=0;i--){
+      const v=series[i]&&series[i][key];
+      if(v!==null&&v!==undefined&&isFinite(Number(v)))return Number(v);
+    }
+    return null;
+  };
+  const weightMa7=movingAverageSeries(weeklyBodySeries,'weight_kg','weight_kg_ma7',7);
+  const bodyFatMa7=movingAverageSeries(weeklyBodySeries,'body_fat_pct','body_fat_pct_ma7',7);
+  const bmiMa7=movingAverageSeries(weeklyBodySeries,'bmi','bmi_ma7',7);
+  const bodyTrendSeries=weeklyBodySeries.map((row,idx)=>Object.assign({},row,weightMa7[idx],bodyFatMa7[idx],bmiMa7[idx]));
+  const weightMaFirst=firstNonNullInSeries(bodyTrendSeries,'weight_kg_ma7');
+  const weightMaLatest=lastNonNullInSeries(bodyTrendSeries,'weight_kg_ma7');
+  const bodyFatMaLatest=lastNonNullInSeries(bodyTrendSeries,'body_fat_pct_ma7');
+  const bmiMaLatest=lastNonNullInSeries(bodyTrendSeries,'bmi_ma7');
   const weeklyWaistSeries=periodDays.map(d=>({
     date:d,
     waist_cm:metricDailyAvg(d,'waist_circumference')
@@ -199,8 +232,6 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     const name=String(w&&w.name||'');
     if(/\uC790\uC804\uAC70|\uC0AC\uC774\uD074|bike|cycle|cycling/i.test(name))return false;
     if(/\uAC77|\uB2EC\uB9AC|\uB7EC\uB2DD|\uB7F0\uB2DD|walk|run/i.test(name))return true;
-    if(/걷|달리|러닝|런닝|walk|run/i.test(name))return true;
-    if(/자전거|사이클|bike|cycle|cycling/i.test(name))return false;
     return Number(distanceKm)>0&&Number(paceMinPerKm)>0&&Number(cadenceSpm)>0;
   };
   const routePoints=(w)=>{
@@ -437,6 +468,15 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
       cardio_quality_detail:w.cardio_quality_detail
     }))
   };
+  const excludedCardioWorkouts=workouts
+    .filter(w=>w.is_walk_run&&w.cardio_exclusion_reason)
+    .map(w=>({
+      name:w.name,
+      start:w.start,
+      distance_km:w.distance_km,
+      pace_min_per_km:w.pace_min_per_km,
+      reason:w.cardio_exclusion_reason
+    }));
 
   const strengthSessions=[];
   const strengthSeen={};
@@ -448,15 +488,54 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
   });
   const byExercise={}; const pain=[]; let totalSets=0,totalReps=0,totalVolume=0,totalTimedSeconds=0;
   strengthSessions.forEach(s=>(s.exercises||[]).forEach(ex=>{
-    const name=String(ex.exercise||'미지정');
+    const name=String(ex.exercise||'unknown');
     if(!byExercise[name])byExercise[name]={sessions:0,sets:0,reps:0,volume_kg:0,timed_seconds:0,last_weight_kg:null,last_recorded_at:null,rpe_values:[]};
     const a=byExercise[name]; a.sessions++; a.sets+=Number(ex.sets||0); a.reps+=Number(ex.reps||0)*Number(ex.sets||0); a.volume_kg+=Number(ex.weight_kg||0)*Number(ex.reps||0)*Number(ex.sets||0); a.timed_seconds+=Number(ex.seconds||0)*Number(ex.sets||0);
     if(Number(ex.weight_kg||0)>0)a.last_weight_kg=Number(ex.weight_kg); a.last_recorded_at=ex.recorded_at||s.finished_at||s.started_at;
     if(ex.rpe!==null&&ex.rpe!==undefined&&isFinite(Number(ex.rpe)))a.rpe_values.push(Number(ex.rpe));
     totalSets+=Number(ex.sets||0); totalReps+=Number(ex.reps||0)*Number(ex.sets||0); totalVolume+=Number(ex.weight_kg||0)*Number(ex.reps||0)*Number(ex.sets||0); totalTimedSeconds+=Number(ex.seconds||0)*Number(ex.sets||0);
-    if(Number(ex.pain_level||0)>0)pain.push({date:ex.recorded_at||s.finished_at||s.started_at,exercise:name,level:Number(ex.pain_level),area:ex.pain_area||'미지정',memo:ex.memo||''});
+    if(Number(ex.pain_level||0)>0)pain.push({date:ex.recorded_at||s.finished_at||s.started_at,exercise:name,level:Number(ex.pain_level),area:ex.pain_area||'unknown',memo:ex.memo||''});
   }));
   Object.keys(byExercise).forEach(k=>{const a=byExercise[k];a.volume_kg=round_(a.volume_kg,1);a.avg_rpe=a.rpe_values.length?round_(avg_(a.rpe_values),1):null;delete a.rpe_values;});
+  const strengthDailySessions=strengthSessions.slice()
+    .sort((a,b)=>getSessionTimestamp_(a)-getSessionTimestamp_(b))
+    .map(s=>{
+      const t=parseDate_(s.finished_at||s.started_at||s.date||s.created_at);
+      const exercises=(s.exercises||[]).map(ex=>{
+        const sets=Number(ex.sets||0);
+        const reps=Number(ex.reps||0);
+        const weight=Number(ex.weight_kg||0);
+        const seconds=Number(ex.seconds||0);
+        return {
+          exercise:String(ex.exercise||'unknown'),
+          type:ex.record_type||ex.type||'',
+          weight_kg:weight||0,
+          reps:reps||0,
+          sets:sets||0,
+          seconds:seconds||0,
+          volume_kg:round_(weight*reps*sets,1),
+          total_reps:round_(reps*sets,0),
+          rpe:ex.rpe!==null&&ex.rpe!==undefined&&isFinite(Number(ex.rpe))?Number(ex.rpe):null,
+          pain_level:ex.pain_level!==null&&ex.pain_level!==undefined&&isFinite(Number(ex.pain_level))?Number(ex.pain_level):0,
+          pain_area:ex.pain_area||'',
+          memo:ex.memo||''
+        };
+      });
+      const rpes=exercises.map(ex=>ex.rpe).filter(v=>v!==null);
+      return {
+        date:Utilities.formatDate(t,TIME_ZONE,'yyyy-MM-dd'),
+        started_at:s.started_at||null,
+        finished_at:s.finished_at||null,
+        exercise_count:exercises.length,
+        total_sets:round_(sum_(exercises.map(ex=>ex.sets)),0),
+        total_reps:round_(sum_(exercises.map(ex=>ex.total_reps)),0),
+        total_volume_kg:round_(sum_(exercises.map(ex=>ex.volume_kg)),1),
+        timed_seconds:round_(sum_(exercises.map(ex=>ex.seconds*ex.sets)),0),
+        avg_rpe:rpes.length?round_(avg_(rpes),1):null,
+        max_pain_level:exercises.length?Math.max.apply(null,exercises.map(ex=>ex.pain_level||0)):0,
+        exercises:exercises
+      };
+    });
 
   const weightLatest=latestMetric('weight_body_mass');
   const weightFirst=firstMetric('weight_body_mass');
@@ -464,13 +543,60 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
   const waistLatest=latestMetric('waist_circumference');
   const waistFirst=firstMetric('waist_circumference');
   const waistChange=waistMeasurements>=2&&waistLatest!==null&&waistFirst!==null?round_(waistLatest-waistFirst,1):null;
+  const metricCount=(name)=>(metrics[name]||[]).length;
+  const metricDays=(name)=>periodDays.filter(d=>daily[d]&&daily[d][name]&&daily[d][name].length).length;
+  const missingOrSparse=[];
+  if(metricCount('weight_body_mass')<2)missingOrSparse.push('weight_body_mass has fewer than 2 measurements in the analysis period. Weight trend confidence is low.');
+  if(metricCount('body_fat_percentage')<2)missingOrSparse.push('body_fat_percentage has fewer than 2 measurements in the analysis period. Body-fat trend confidence is low.');
+  if(metricCount('body_mass_index')<2)missingOrSparse.push('body_mass_index has fewer than 2 measurements in the analysis period. BMI trend confidence is low.');
+  if(metricDays('resting_heart_rate')<Math.max(2,Math.floor(periodDays.length*0.3)))missingOrSparse.push('resting_heart_rate coverage is sparse. Recovery assessment should be conservative.');
+  if(!metricCount('heart_rate_variability'))missingOrSparse.push('heart_rate_variability is not available, so recovery analysis cannot use HRV.');
+  if(!metricCount('sleep_analysis'))missingOrSparse.push('sleep_analysis is not available, so recovery analysis cannot use sleep duration or quality.');
+  if(!metricCount('dietary_energy_consumed'))missingOrSparse.push('dietary_energy_consumed is not available, so calorie deficit cannot be calculated directly.');
+  if(!strengthSessions.length)missingOrSparse.push('No manual strength sessions were recorded in the analysis period. Strength-volume conclusions should be cautious.');
+  const dataDiagnosis={
+    analysis_days:periodDays.length,
+    file_counts:{health:healthFiles.length,fitness:fitnessFiles.length,strength:strengthFiles.length},
+    available_metrics:Object.keys(metrics).sort(),
+    measurement_counts:{
+      weight:metricCount('weight_body_mass'),
+      body_fat:metricCount('body_fat_percentage'),
+      bmi:metricCount('body_mass_index'),
+      waist:metricCount('waist_circumference'),
+      resting_hr:metricCount('resting_heart_rate'),
+      heart_rate:metricCount('heart_rate'),
+      hrv:metricCount('heart_rate_variability'),
+      sleep:metricCount('sleep_analysis'),
+      dietary_energy:metricCount('dietary_energy_consumed')
+    },
+    days_with_metric:{
+      weight:metricDays('weight_body_mass'),
+      body_fat:metricDays('body_fat_percentage'),
+      bmi:metricDays('body_mass_index'),
+      resting_hr:metricDays('resting_heart_rate'),
+      steps:metricDays('step_count'),
+      active_energy:metricDays('active_energy'),
+      exercise_minutes:metricDays('apple_exercise_time')
+    },
+    cardio:{
+      included_sessions:cardioWorkouts.length,
+      excluded_sessions:excludedCardioWorkouts.length,
+      excluded_workouts:excludedCardioWorkouts
+    },
+    strength:{
+      recorded_sessions:strengthSessions.length,
+      manual_tracking_start_note:'Manual strength logging started on 2026-07-20; earlier gaps may reflect missing records rather than no training.'
+    },
+    missing_or_sparse:missingOrSparse
+  };
   return {
-    coverage:{from:formatIso_(periodFrom),to:formatIso_(periodTo),days_with_health_data:days.length},
-    body:{weight_latest_kg:weightLatest,weight_first_kg:weightFirst,weight_change_kg:weightLatest!==null&&weightFirst!==null?round_(weightLatest-weightFirst,2):null,body_fat_latest_pct:normalizePercent(latestMetric('body_fat_percentage')),lean_mass_latest_kg:latestMetric('lean_body_mass'),bmi_latest:latestMetric('body_mass_index'),weight_measurements:(metrics.weight_body_mass||[]).length,waist_latest_cm:waistLatest,waist_first_cm:waistFirst,waist_change_cm:waistChange,waist_measurements:waistMeasurements,weekly_body_series:weeklyBodySeries,weekly_waist_series:weeklyWaistSeries},
+    coverage:{from:formatIso_(periodFrom),to:formatIso_(periodTo),analysis_days:periodDays.length,days_with_health_data:days.length,file_counts:dataDiagnosis.file_counts},
+    data_diagnosis:dataDiagnosis,
+    body:{weight_latest_kg:weightLatest,weight_first_kg:weightFirst,weight_change_kg:weightLatest!==null&&weightFirst!==null?round_(weightLatest-weightFirst,2):null,body_fat_latest_pct:normalizePercent(latestMetric('body_fat_percentage')),lean_mass_latest_kg:latestMetric('lean_body_mass'),bmi_latest:latestMetric('body_mass_index'),weight_measurements:(metrics.weight_body_mass||[]).length,waist_latest_cm:waistLatest,waist_first_cm:waistFirst,waist_change_cm:waistChange,waist_measurements:waistMeasurements,weekly_body_series:weeklyBodySeries,weekly_waist_series:weeklyWaistSeries,body_trend:{weight_kg_ma7_latest:weightMaLatest,weight_kg_ma7_first:weightMaFirst,weight_kg_ma7_change:weightMaLatest!==null&&weightMaFirst!==null?round_(weightMaLatest-weightMaFirst,2):null,body_fat_pct_ma7_latest:bodyFatMaLatest,bmi_ma7_latest:bmiMaLatest,moving_average_series:bodyTrendSeries}},
     activity:{steps_total:round_(sumMetric('step_count'),0),steps_daily_average:round_(avg_(dailySums('step_count')),0),distance_total_km:sumMetric('walking_running_distance'),active_energy_total_kcal:round_(sumMetric('active_energy')/4.184,1),exercise_minutes_total:sumMetric('apple_exercise_time'),stand_minutes_total:sumMetric('apple_stand_time'),daily_activity_series:dailyActivitySeries,cardio_summary:cardioSummary,cardio_sessions:recentCardioWorkouts},
     heart_rate:{resting_hr_average:round_(avg_(dailyAvgs('resting_heart_rate')),1),resting_hr_latest:latestMetric('resting_heart_rate'),walking_hr_average:round_(avg_(dailyAvgs('walking_heart_rate_average')),1),heart_rate_average:round_(avg_(dailyAvgs('heart_rate')),1),oxygen_saturation_latest:latestMetric('oxygen_saturation')},
     fitness:{session_count:workouts.length,total_minutes:round_(workouts.reduce((s,w)=>s+w.duration_min,0),1),active_kcal:round_(workouts.reduce((s,w)=>s+w.active_kcal,0),1),cardio_sessions:recentCardioWorkouts,sessions:workouts.slice(-50)},
-    strength:{session_count:strengthSessions.length,total_sets:totalSets,total_reps:totalReps,total_volume_kg:round_(totalVolume,1),timed_seconds:totalTimedSeconds,by_exercise:byExercise},
+    strength:{session_count:strengthSessions.length,total_sets:totalSets,total_reps:totalReps,total_volume_kg:round_(totalVolume,1),timed_seconds:totalTimedSeconds,by_exercise:byExercise,daily_sessions:strengthDailySessions.slice(-60)},
     pain:{event_count:pain.length,max_level:pain.length?Math.max.apply(null,pain.map(x=>x.level)):0,events:pain.slice(-30)},
     weight_loss_context:{goal:'체중감량',available_energy_expenditure_kcal:round_(sumMetric('active_energy')/4.184,1),food_intake_data_available:false,note:'식사·섭취 열량 데이터가 없으므로 칼로리 적자량을 직접 계산하지 않고 체중 추세와 활동량을 중심으로 평가합니다.'}
   };
@@ -652,18 +778,28 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
   },required:['previous_plan_review','ai_analysis','weight_loss_analysis','next_plan','warnings']};
 
   const instructions='당신은 한국어로 답하는 운동 코치다. 목표는 체중감량과 근력 유지·향상이다. 제공된 수치만 근거로 분석하고, 식사 데이터가 없으면 칼로리 적자를 추정하지 않는다. 통증 기록을 최우선으로 반영한다. 허리 통증이 있거나 악화 신호가 있으면 허리에 부담되는 동작을 계획에서 제외하고 진료 또는 휴식을 권고한다. 의료 진단을 하지 않는다. 계획은 현실적인 7일 계획으로 작성한다.';
-  const input={baseline:baseline||null,statistics:stats,previous_analysis:latest?{created_at:latest.created_at,ai_analysis:latest.ai_analysis,weight_loss_analysis:latest.weight_loss_analysis}:null,previous_plan:previousPlan||null,additional_request:additionalRequest||'',required_flow:['이전 계획 이행 평가','새 기록 분석','체중감량 분석','다음 7일 계획']};
+  const input={
+    baseline:baseline||null,
+    statistics:stats,
+    previous_analysis:latest?{created_at:latest.created_at,ai_analysis:latest.ai_analysis,weight_loss_analysis:latest.weight_loss_analysis}:null,
+    previous_plan:previousPlan||null,
+    additional_request:additionalRequest||'',
+    required_flow:['이전 계획 이행 평가','새 기록 분석','체중감량 분석','다음 7일 계획']
+  };
   const finalInstructions=[
     '당신은 한국어로 답하는 운동 코치다. / You are a fitness coach who answers in Korean.',
     '사용자의 목표는 체중감량과 근력 유지 또는 향상이다. / The user goal is weight loss while maintaining or improving strength.',
     '제공된 측정값만 근거로 사용한다. / Use only the provided measurements as evidence.',
-    '식사 섭취 데이터가 없으면 칼로리 적자량을 추정하지 않는다. / If food intake data is unavailable, do not estimate calorie deficit.',
-    '통증 기록을 최우선으로 반영한다. 허리 통증이나 악화 신호가 있으면 허리에 부담되는 동작을 제외하고, 필요하면 휴식 또는 진료를 권고한다. / Prioritize pain records. If back pain or worsening warning signs exist, exclude back-loading movements and recommend rest or medical care as appropriate.',
-    '의료 진단을 하지 않는다. / Do not provide medical diagnosis.',
+    '식사·섭취 열량 데이터가 없으면 칼로리 적자량을 추정하지 않는다. / If food intake data is unavailable, do not estimate calorie deficit.',
+    '통증 기록을 최우선으로 반영한다. 허리 통증이나 악화 신호가 있으면 허리에 부담되는 동작을 제외하고 필요하면 휴식 또는 진료를 권고한다. / Prioritize pain records. If back pain or worsening warning signs exist, exclude back-loading movements and recommend rest or medical care as appropriate.',
+    '의료 진단은 하지 않는다. / Do not provide medical diagnosis.',
     '현실적인 7일 운동 계획을 작성한다. / Create a realistic 7-day plan.',
-    '고정 규칙: 7월 초의 실내 걷기와 최근의 실내 달리기 또는 실내 운동은 Apple Watch 운동명 선택 차이일 수 있으므로, 운동명 변화 자체를 운동 방식 전환으로 해석하지 않는다. 거리, 시간, 페이스, 심박수, 케이던스, 활동칼로리 기준으로 같은 실내 유산소 흐름으로 비교한다. / Fixed rule: In early July, the same indoor cardio was sometimes recorded as indoor walking. Recent sessions may be recorded as indoor running or generic indoor workout. Do not interpret the workout-name change itself as a change in training style. Compare them as one indoor cardio trend using distance, duration, pace, heart rate, cadence, and active calories.',
-    '고정 규칙: 근력운동 수동 기록은 2026년 7월 20일부터 시작되었으므로, 그 이전 근력운동 공백은 실제 운동 부재가 아니라 기록 누락 가능성으로 본다. / Fixed rule: Manual strength logging starts on 2026-07-20. Treat missing strength records before 2026-07-20 as possible lack of logging coverage, not as definite absence of strength training.',
-    '유산소 세부 규칙: statistics.activity.cardio_summary.quality_sessions가 있으면 선택된 분석기간 전체의 분단위 추정 스플릿, 심박수 영역, 케이던스, 운동 후 심박수 회복을 페이스 안정성, 유산소 강도 분포, 피로, 회복 판단의 보조 근거로 사용한다. Apple Fitness의 초단위 원본값처럼 과도하게 단정하지 않는다. / Cardio detail rule: When statistics.activity.cardio_summary.quality_sessions exists, use the selected analysis period, not only the recent display list. Treat minute-level estimated splits, heart-rate zones, cadence, and heart-rate recovery as supportive evidence for pace stability, cardio intensity distribution, fatigue, and recovery. Do not treat them as exact Apple Fitness second-level values.',
+    '고정 규칙: 7월 초의 실내 걷기와 최근의 실내 달리기 또는 실내 운동은 Apple Watch 운동명 선택 차이일 수 있으므로 운동명 변화 자체를 운동 방식 전환으로 해석하지 않는다. 거리, 시간, 페이스, 심박수, 케이던스, 활동칼로리 기준으로 같은 실내 유산소 흐름으로 비교한다. / Fixed rule: In early July, the same indoor cardio was sometimes recorded as indoor walking. Recent sessions may be recorded as indoor running or generic indoor workout. Do not interpret the workout-name change itself as a change in training style. Compare them as one indoor cardio trend using distance, duration, pace, heart rate, cadence, and active calories.',
+    '고정 규칙: 근력운동 수동 기록은 2026년 7월 20일부터 시작되었으므로 그 이전 근력운동 공백은 실제 운동 부재가 아니라 기록 누락 가능성으로 본다. / Fixed rule: Manual strength logging starts on 2026-07-20. Treat missing strength records before 2026-07-20 as possible lack of logging coverage, not as definite absence of strength training.',
+    '유산소 세부 규칙: statistics.activity.cardio_summary.quality_sessions가 있으면 선택된 분석기간 전체의 분 단위 추정 스플릿, 심박수 영역, 케이던스, 운동 후 심박수 회복을 페이스 안정성, 유산소 강도 분포, 피로, 회복 판단의 보조 근거로 사용한다. Apple Fitness의 초 단위 원본값처럼 과도하게 단정하지 않는다. / Cardio detail rule: When statistics.activity.cardio_summary.quality_sessions exists, use the selected analysis period, not only the recent display list. Treat minute-level estimated splits, heart-rate zones, cadence, and heart-rate recovery as supportive evidence for pace stability, cardio intensity distribution, fatigue, and recovery. Do not treat them as exact Apple Fitness second-level values.',
+    '체중 추세 규칙: statistics.body.body_trend에는 체중·체지방률·BMI의 7일 이동평균이 포함된다. 단일 측정값보다 이동평균을 우선해 체중감량 추세를 판단한다. / Body trend rule: statistics.body.body_trend includes 7-day moving averages for weight, body-fat percentage, and BMI. Prefer moving averages over single measurements when judging weight-loss trend.',
+    '근력 세션 규칙: statistics.strength.daily_sessions에는 날짜별 근력운동 세션, 종목, 중량, 횟수, 세트, RPE, 통증 기록이 포함된다. 다음 계획은 이 날짜별 기록 흐름을 반영한다. / Strength session rule: statistics.strength.daily_sessions includes session-by-session strength records by date, exercise, weight, reps, sets, RPE, and pain. Reflect this chronological training flow in the next plan.',
+    '데이터 품질 규칙: statistics.data_diagnosis에는 데이터 커버리지, 누락·희소 데이터, 제외된 유산소 세션 사유가 포함된다. 데이터가 부족한 지표는 단정하지 말고 신뢰도 제한을 함께 설명한다. / Data quality rule: statistics.data_diagnosis includes coverage, missing or sparse data, and excluded cardio-session reasons. When data is sparse, avoid firm conclusions and explain the confidence limitation.',
     '허리둘레 기록이 있으면 체중, 체지방률, BMI와 함께 복부지방 변화 참고 지표로 사용한다. / Use waist circumference as an abdominal fat trend indicator when waist_circumference data is available.',
     '허리둘레 측정이 1회뿐이면 기준값으로만 사용하고 증가 또는 감소 추세를 판단하지 않는다. / If there is only one waist circumference measurement, treat it as a baseline value only and do not infer an increasing or decreasing trend.',
     '허리둘레는 측정 위치, 시간, 자세에 따라 오차가 생길 수 있으므로 단기간 변화는 과도하게 해석하지 않는다. / Do not overinterpret short-term waist circumference changes because measurement position, timing, and posture can create noise.'
