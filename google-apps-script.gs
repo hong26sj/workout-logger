@@ -235,6 +235,144 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     return name||'\uC6B4\uB3D9';
   };
 
+  const metricSeries=(box)=>{
+    const raw=Array.isArray(box)?box:(box&&Array.isArray(box.data)?box.data:[]);
+    return raw.map(v=>{
+      const t=parseDate_(v.date);
+      const qty=Number(v.qty);
+      return {t:t.getTime(),qty:qty,units:String(v.units||v.unit||box&&box.units||box&&box.unit||'')};
+    }).filter(v=>v.t>0&&isFinite(v.qty)).sort((a,b)=>a.t-b.t);
+  };
+  const workoutSeries=(w,keys)=>{
+    for(let i=0;i<keys.length;i++){
+      const s=metricSeries(w&&w[keys[i]]);
+      if(s.length)return s;
+    }
+    return [];
+  };
+  const seriesQtyAsKm=(v)=>{
+    if(!v||!isFinite(Number(v.qty)))return 0;
+    const unit=String(v.units||'').toLowerCase();
+    if(unit==='m'||unit==='meter'||unit==='meters')return Number(v.qty)/1000;
+    return Number(v.qty);
+  };
+  const avgSeriesInWindow=(series,startMs,endMs)=>{
+    const values=series.filter(v=>v.t>=startMs&&v.t<=endMs).map(v=>Number(v.qty)).filter(v=>isFinite(v));
+    return values.length?round_(avg_(values),1):null;
+  };
+  const zoneForHr=(hr)=>{
+    if(!isFinite(Number(hr)))return null;
+    const n=Number(hr);
+    if(n<137)return 'zone1';
+    if(n<=147)return 'zone2';
+    if(n<=158)return 'zone3';
+    if(n<=169)return 'zone4';
+    return 'zone5';
+  };
+  const buildHeartRateZones=(hrSeries,startMs,endMs)=>{
+    const zones={zone1_seconds:0,zone2_seconds:0,zone3_seconds:0,zone4_seconds:0,zone5_seconds:0};
+    if(!hrSeries.length)return zones;
+    for(let i=0;i<hrSeries.length;i++){
+      const current=hrSeries[i];
+      if(current.t<startMs||current.t>endMs)continue;
+      const next=hrSeries[i+1];
+      const nextT=next?Math.min(next.t,endMs):Math.min(current.t+60000,endMs);
+      const seconds=Math.max(0,(nextT-current.t)/1000);
+      const zone=zoneForHr(current.qty);
+      if(zone)zones[zone+'_seconds']+=seconds;
+    }
+    Object.keys(zones).forEach(k=>zones[k]=round_(zones[k],0));
+    return zones;
+  };
+  const buildHeartRateRecovery=(series)=>{
+    if(!series.length)return null;
+    const first=series[0];
+    const nearest=(targetMs)=>{
+      let best=null;
+      series.forEach(v=>{
+        if(!best||Math.abs(v.t-targetMs)<Math.abs(best.t-targetMs))best=v;
+      });
+      return best&&Math.abs(best.t-targetMs)<=45000?round_(best.qty,0):null;
+    };
+    const one=nearest(first.t+60000);
+    const two=nearest(first.t+120000);
+    return {
+      start_hr:round_(first.qty,0),
+      one_min_hr:one,
+      two_min_hr:two,
+      one_min_drop:one!==null?round_(first.qty-one,0):null,
+      two_min_drop:two!==null?round_(first.qty-two,0):null
+    };
+  };
+  const buildSplitSummary=(distanceSeries,hrSeries,cadenceSeries,startMs,durationMin,totalDistanceKm)=>{
+    if(!distanceSeries.length||!Number(totalDistanceKm))return [];
+    const splits=[];
+    let acc=0;
+    let splitStartMs=startMs;
+    let target=1;
+    distanceSeries.forEach(v=>{
+      const km=seriesQtyAsKm(v);
+      if(km<=0)return;
+      const before=acc;
+      acc+=km;
+      while(target<=acc&&splits.length<8){
+        const ratio=km>0?(target-before)/km:1;
+        const splitEndMs=v.t;
+        const seconds=Math.max(0,(splitEndMs-splitStartMs)/1000);
+        const avgHr=avgSeriesInWindow(hrSeries,splitStartMs,splitEndMs);
+        const avgCadence=avgSeriesInWindow(cadenceSeries,splitStartMs,splitEndMs);
+        splits.push({
+          km:target,
+          duration_seconds:round_(seconds,0),
+          pace_min_per_km:seconds>0?round_(seconds/60,2):null,
+          avg_hr:avgHr,
+          avg_cadence_spm:avgCadence,
+          confidence:ratio>=0&&ratio<=1?'minute_estimate':'low'
+        });
+        splitStartMs=splitEndMs;
+        target++;
+      }
+    });
+    const remaining=round_(Number(totalDistanceKm||0)-Math.floor(Number(totalDistanceKm||0)),2);
+    if(remaining>=0.2&&splits.length<8){
+      const endMs=startMs+Number(durationMin||0)*60000;
+      const seconds=Math.max(0,(endMs-splitStartMs)/1000);
+      splits.push({
+        km:round_(Math.floor(Number(totalDistanceKm))+remaining,2),
+        duration_seconds:round_(seconds,0),
+        pace_min_per_km:seconds>0?round_((seconds/60)/remaining,2):null,
+        avg_hr:avgSeriesInWindow(hrSeries,splitStartMs,endMs),
+        avg_cadence_spm:avgSeriesInWindow(cadenceSeries,splitStartMs,endMs),
+        confidence:'partial_minute_estimate'
+      });
+    }
+    return splits;
+  };
+  const buildCardioQualityDetail=(w,start,durationMin,distanceKm)=>{
+    const startMs=start.getTime();
+    const endMs=startMs+Number(durationMin||0)*60000;
+    const hrSeries=workoutSeries(w,['heartRateData','heart_rate_data','heartRate']);
+    const cadenceSeries=workoutSeries(w,['stepCadence','cadence','avgCadence']);
+    const distanceSeries=workoutSeries(w,['walkingAndRunningDistance','walkingRunningDistance','distance']);
+    const recoverySeries=workoutSeries(w,['heartRateRecovery','heart_rate_recovery']);
+    const splits=buildSplitSummary(distanceSeries,hrSeries,cadenceSeries,startMs,durationMin,distanceKm);
+    const firstHr=hrSeries.length?hrSeries[0].t:null;
+    return {
+      granularity:'minute_level_estimate',
+      note:'Derived from Health Auto Export workout metric series. Values can differ from Apple Fitness second-level calculations.',
+      heart_rate_data_starts_after_seconds:firstHr?round_((firstHr-startMs)/1000,0):null,
+      splits_1km:splits,
+      heart_rate_zones:buildHeartRateZones(hrSeries,startMs,endMs),
+      heart_rate_recovery:buildHeartRateRecovery(recoverySeries),
+      available_series:{
+        distance_points:distanceSeries.length,
+        heart_rate_points:hrSeries.length,
+        cadence_points:cadenceSeries.length,
+        recovery_points:recoverySeries.length
+      }
+    };
+  };
+
   const workouts=[];
   const workoutIds={};
   fitnessFiles.forEach(x=>((x.data&&x.data.data&&x.data.data.workouts)||[]).forEach(w=>{
@@ -247,6 +385,7 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     const cadenceSpm=workoutCadence(w);
     const isWalkRun=isWalkRunWorkout(w,distanceKm,paceMinPerKm,cadenceSpm);
     const gpsRouteSignature=routeSignature(w,distanceKm);
+    const cardioQuality=isWalkRun?buildCardioQualityDetail(w,start,durationMin,distanceKm):null;
     workouts.push({
       name:cardioDisplayName(w,distanceKm,paceMinPerKm,cadenceSpm,isWalkRun),
       original_name:w.name||'\uC6B4\uB3D9',
@@ -260,7 +399,8 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
       cadence_spm:cadenceSpm,
       has_gps_route:!!gpsRouteSignature,
       route_signature:gpsRouteSignature,
-      is_walk_run:isWalkRun
+      is_walk_run:isWalkRun,
+      cardio_quality_detail:cardioQuality
     });
   }));
   const routeCounts={};
@@ -284,7 +424,18 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,periodFrom,peri
     distance_km:round_(cardioDistance,2),
     avg_pace_min_per_km:cardioDistance?round_(cardioMinutes/cardioDistance,2):null,
     avg_hr:cardioMinutes?round_(cardioHrWeighted/cardioMinutes,1):null,
-    active_kcal:round_(cardioKcal,1)
+    active_kcal:round_(cardioKcal,1),
+    quality_detail_note:'Cardio sessions in the selected analysis period include minute-level estimated splits, heart-rate zones, cadence, and recovery when exported by Health Auto Export.',
+    quality_sessions:cardioWorkouts.map(w=>({
+      name:w.name,
+      start:w.start,
+      distance_km:w.distance_km,
+      pace_min_per_km:w.pace_min_per_km,
+      avg_hr:w.avg_hr,
+      cadence_spm:w.cadence_spm,
+      active_kcal:w.active_kcal,
+      cardio_quality_detail:w.cardio_quality_detail
+    }))
   };
 
   const strengthSessions=[];
@@ -512,6 +663,7 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
     '현실적인 7일 운동 계획을 작성한다. / Create a realistic 7-day plan.',
     '고정 규칙: 7월 초의 실내 걷기와 최근의 실내 달리기 또는 실내 운동은 Apple Watch 운동명 선택 차이일 수 있으므로, 운동명 변화 자체를 운동 방식 전환으로 해석하지 않는다. 거리, 시간, 페이스, 심박수, 케이던스, 활동칼로리 기준으로 같은 실내 유산소 흐름으로 비교한다. / Fixed rule: In early July, the same indoor cardio was sometimes recorded as indoor walking. Recent sessions may be recorded as indoor running or generic indoor workout. Do not interpret the workout-name change itself as a change in training style. Compare them as one indoor cardio trend using distance, duration, pace, heart rate, cadence, and active calories.',
     '고정 규칙: 근력운동 수동 기록은 2026년 7월 20일부터 시작되었으므로, 그 이전 근력운동 공백은 실제 운동 부재가 아니라 기록 누락 가능성으로 본다. / Fixed rule: Manual strength logging starts on 2026-07-20. Treat missing strength records before 2026-07-20 as possible lack of logging coverage, not as definite absence of strength training.',
+    '유산소 세부 규칙: statistics.activity.cardio_summary.quality_sessions가 있으면 선택된 분석기간 전체의 분단위 추정 스플릿, 심박수 영역, 케이던스, 운동 후 심박수 회복을 페이스 안정성, 유산소 강도 분포, 피로, 회복 판단의 보조 근거로 사용한다. Apple Fitness의 초단위 원본값처럼 과도하게 단정하지 않는다. / Cardio detail rule: When statistics.activity.cardio_summary.quality_sessions exists, use the selected analysis period, not only the recent display list. Treat minute-level estimated splits, heart-rate zones, cadence, and heart-rate recovery as supportive evidence for pace stability, cardio intensity distribution, fatigue, and recovery. Do not treat them as exact Apple Fitness second-level values.',
     '허리둘레 기록이 있으면 체중, 체지방률, BMI와 함께 복부지방 변화 참고 지표로 사용한다. / Use waist circumference as an abdominal fat trend indicator when waist_circumference data is available.',
     '허리둘레 측정이 1회뿐이면 기준값으로만 사용하고 증가 또는 감소 추세를 판단하지 않는다. / If there is only one waist circumference measurement, treat it as a baseline value only and do not infer an increasing or decreasing trend.',
     '허리둘레는 측정 위치, 시간, 자세에 따라 오차가 생길 수 있으므로 단기간 변화는 과도하게 해석하지 않는다. / Do not overinterpret short-term waist circumference changes because measurement position, timing, and posture can create noise.'
