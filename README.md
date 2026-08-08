@@ -1,29 +1,47 @@
-﻿# Workout Logger README
+# Workout Logger
 
-이 문서는 Workout Logger 프로젝트의 현재 운영 기준을 정리한 문서입니다.
+Apple Watch / Apple Health 데이터와 수동 근력운동 기록을 Google Drive에 모아, 사용자가 요청할 때만 AI 분석을 실행하는 개인용 PWA입니다.
 
-## 목적
+## 보안 원칙
 
-Workout Logger는 Apple Watch와 Apple Health 데이터를 바탕으로 운동 기록, 건강 데이터, 수동 근력운동 기록을 모아 체중감량과 근력 유지를 위한 AI 분석을 수행하는 개인용 PWA입니다.
+이 저장소에는 다음 값을 절대로 기록하지 않습니다.
 
-핵심 목표는 다음과 같습니다.
+- Google Drive 폴더 ID
+- OpenAI API Key
+- 앱 숫자 비밀번호
+- 인증 토큰
 
-- 근력운동을 직접 기록한다.
-- Health Auto Export가 Google Drive에 건강/운동 데이터를 자동 저장한다.
-- 사용자가 원할 때만 AI 분석을 실행한다.
-- OpenAI API 비용이 자동으로 계속 발생하지 않도록 한다.
-- AI 분석 결과를 Google Drive에 JSON으로 저장한다.
+Google Drive 폴더 ID는 비밀번호 자체는 아니지만, 개인 데이터 저장 위치를 식별하는 값이므로 공개 GitHub 저장소에는 두지 않습니다. 실제 값은 **Google Apps Script의 스크립트 속성**에만 저장합니다.
 
-## 구성 요소
+## Google Drive 폴더 ID 찾는 방법
 
-- PWA: GitHub Pages에서 실행되는 운동 기록 앱
-- GitHub 저장소: `hong26sj/workout-logger`
-- Google Apps Script: PWA와 Google Drive 사이의 API
-- Google Drive: Health, Fitness, Strength, Analysis, Baseline 데이터 저장
-- Health Auto Export: Apple Health/Fitness 데이터를 Google Drive로 자동 내보내는 앱
-- OpenAI API: 사용자가 AI 분석 버튼을 누를 때만 호출
+Google Drive에서 사용할 폴더를 브라우저로 엽니다. 주소창은 일반적으로 다음 형태입니다.
 
-## 데이터 흐름
+```text
+https://drive.google.com/drive/folders/여기가_폴더_ID
+```
+
+`/folders/` 뒤의 문자열이 폴더 ID입니다. Health, Fitness, Strength 폴더 각각에서 ID를 확인합니다.
+
+확인한 값은 GitHub 코드에 넣지 말고 Google Apps Script에서 다음과 같이 등록합니다.
+
+1. Apps Script 프로젝트를 엽니다.
+2. 왼쪽 `프로젝트 설정`을 엽니다.
+3. `스크립트 속성`에서 `스크립트 속성 추가`를 선택합니다.
+4. 아래 속성을 등록합니다.
+
+```text
+HEALTH_FOLDER_ID      = Health 폴더 ID
+FITNESS_FOLDER_ID     = Fitness 폴더 ID
+STRENGTH_FOLDER_ID    = Strength 폴더 ID
+OPENAI_API_KEY        = OpenAI API Key
+OPENAI_MODEL          = gpt-5-mini
+APP_PASSWORD          = 앱에서 사용할 숫자 6~12자리 비밀번호
+```
+
+`APP_PASSWORD`도 GitHub 코드에 직접 적지 않습니다.
+
+## 데이터 구조
 
 ```text
 Apple Watch / Apple Health
@@ -34,45 +52,65 @@ Google Drive Health / Fitness JSON
 
 PWA 근력운동 입력
         ↓
-Google Apps Script
+Google Apps Script (토큰 인증)
         ↓
 Google Drive Strength JSON
 
 PWA AI 분석 실행
         ↓
-Google Apps Script
+Google Apps Script (토큰 인증 + 호출 제한)
         ↓
 Health + Fitness + Strength 집계
         ↓
 OpenAI API
         ↓
 Analysis JSON 저장
-        ↓
-PWA에 마지막 분석 표시
 ```
 
-## Google Drive 폴더
-
-현재 Apps Script 코드에는 다음 폴더 ID가 설정되어 있습니다.
-
-```javascript
-const HEALTH_FOLDER_ID = '1kIMgXnimiRiVTqPmuP6hQ2KQq64zlsYy';
-const FITNESS_FOLDER_ID = '1tuxq3zOz9pBQDk9b5H-N78LUWkUQ6w0l';
-const STRENGTH_FOLDER_ID = '1-Qfa2hYLBCiq6TW2IemLQ31AtUpFdWAR';
-```
-
-근력운동 루트 폴더 아래에는 다음 하위 폴더가 사용됩니다.
+Strength 폴더 아래에는 다음 구조가 사용됩니다.
 
 ```text
-Strength root/
+Strength/
   YYYY-MM/
   Analysis/
   Baseline/
 ```
 
-## Health Auto Export 설정 기준
+## 적용된 접근 보안
 
-권장 설정은 다음과 같습니다.
+PWA와 Apps Script 사이에는 다음 정책을 사용합니다.
+
+- 숫자 비밀번호: 6~12자리
+- 비밀번호는 Apps Script 스크립트 속성에만 저장
+- 로그인 성공 시 무작위 인증 토큰 발급
+- 토큰 유효기간: 최대 180일
+- 토큰은 브라우저의 localStorage에 저장
+- 비밀번호 5회 연속 실패 시 10분 동안 로그인 잠금
+- Drive 기록 조회/저장/삭제 및 AI 분석은 모두 유효한 토큰 필요
+- 기존 GET 방식의 기록 조회도 클라이언트에서 인증 POST 방식으로 변환
+- AI 분석은 최소 60초 간격
+- AI 분석은 하루 최대 10회
+- 설정 화면에서 현재 기기의 인증 토큰을 삭제할 수 있음
+
+이 보안은 공개 GitHub Pages의 HTML/JavaScript를 숨기는 방식이 아닙니다. **실제 보호 지점은 Apps Script 서버**이며, 인증되지 않은 요청이 Drive 데이터에 접근하거나 OpenAI API 비용을 발생시키지 못하도록 막습니다.
+
+## Apps Script 적용 절차
+
+저장소의 `google-apps-script.gs`는 참고/백업용입니다. 실제 보안 적용은 Apps Script 편집기의 `Code.gs`에 보안 적용본을 넣고 새 버전으로 배포해야 완료됩니다.
+
+1. Google Apps Script 편집기를 엽니다.
+2. 기존 `Code.gs`를 백업합니다.
+3. 제공받은 보안 적용 Apps Script 전체 코드를 `Code.gs`에 붙여넣습니다.
+4. 위의 스크립트 속성을 모두 등록합니다.
+5. 저장합니다.
+6. `배포` → `배포 관리`로 이동합니다.
+7. 기존 웹 앱 배포를 편집합니다.
+8. 새 버전을 선택하여 배포합니다.
+9. 기존 `/exec` 웹 앱 URL을 그대로 사용합니다.
+
+웹 앱 실행 사용자는 **본인**으로 두고, 접근 권한은 기존 PWA에서 호출 가능한 설정을 유지합니다. 공개 호출이 가능하더라도 Apps Script 내부의 앱 인증이 실제 데이터 접근을 차단합니다.
+
+## Health Auto Export 권장 설정
 
 - Health 데이터: JSON
 - Fitness/Workout 데이터: JSON
@@ -82,204 +120,37 @@ Strength root/
 - Step Cadence 포함
 - Active Energy 포함
 - Heart Rate Recovery 포함 가능하면 포함
-- Time Grouping: 현재는 Minutes 기준
+- Time Grouping: Minutes
 
-분 단위 내보내기를 사용하면 Apple Fitness 앱의 초 단위 계산과 약간 차이가 날 수 있습니다. 현재 AI 분석에서는 이 값을 정확한 원본값이 아니라 분단위 추정값으로 취급합니다.
+분 단위 내보내기는 Apple Fitness 앱의 초 단위 계산과 약간 다를 수 있으므로 AI 분석에서는 분 단위 추정값으로 취급합니다.
 
-## 근력운동 기록 기준
+## 근력운동 기록
 
-근력운동은 PWA에서 직접 입력합니다.
+PWA에서 운동일자, 운동명, 기록 유형, 무게, 횟수, 세트, 시간, RPE, 통증 정도/부위, 메모를 기록합니다. 최근 기록은 Google Drive를 단일 원본으로 사용합니다.
 
-기록 가능한 주요 항목은 다음과 같습니다.
+운동명 입력창은 iOS Safari의 `datalist` 및 연락처 자동완성 문제를 피하기 위해 자체 운동명 선택창을 사용합니다. 입력창을 터치하면 전체 운동 목록이 표시되고, 글자를 입력하면 후보가 필터링됩니다.
 
-- 운동일자
-- 운동명
-- 기록 유형
-- 무게
-- 횟수
-- 세트
-- 시간 운동
-- RPE
-- 통증 부위
-- 통증 정도
-- 메모
+## AI 분석
 
-운동일자는 오늘이 아니어도 선택할 수 있습니다. 어제 운동을 기록하지 못한 경우에도 실제 운동한 날짜로 입력합니다.
+AI 분석은 자동 실행되지 않고 사용자가 버튼을 누른 경우에만 실행됩니다. Health/Fitness/Strength JSON을 집계하고 OpenAI API를 호출한 뒤 결과를 Analysis 폴더에 JSON으로 저장합니다.
 
-### 최근 기록 불러오기 및 삭제 동작
+식사 데이터가 없으면 칼로리 적자를 임의로 계산하지 않으며, 통증 기록과 데이터 품질 제한을 우선 반영합니다.
 
-최근 기록은 Google Drive를 단일 원본으로 사용합니다.
+## PWA 업데이트
 
-- `오늘로 불러오기`는 기존 세션의 운동 목록을 현재 입력 목록으로 복사합니다.
-- 불러온 뒤 운동을 수정하거나 새 운동을 추가해도, 아직 저장하지 않았다면 그 내용은 현재 입력 목록에만 존재합니다.
-- 원래의 최근 Drive 기록을 삭제해도 현재 입력 목록은 유지되어야 합니다.
-- 입력 목록의 개별 운동 `삭제`와 최근 기록의 `Drive 삭제`는 서로 다른 동작이며 이벤트가 섞이면 안 됩니다.
-- 현재 구현은 입력 목록의 수정/삭제 이벤트를 `#exerciseList` 내부 버튼에만 연결하도록 범위를 제한합니다.
-- 잘못된 인덱스(`NaN`, 음수, 범위 초과)가 전달되면 입력 목록을 변경하지 않도록 방어합니다.
-- 최근 기록의 `Drive 삭제`는 즉시 확인창을 띄우고, 확인 후 Apps Script의 `delete_strength` 액션을 호출합니다.
-- 최근 기록이 다시 렌더링되더라도 삭제 버튼은 새로고침 없이 계속 정상 동작해야 합니다.
+서비스워커 캐시를 사용하므로 GitHub Pages 변경 후 아이폰 홈 화면 앱에 이전 버전이 남을 수 있습니다. 현재 캐시 버전은 `workout-logger-ai-v17`입니다.
 
-이 동작은 다음 시나리오를 기준으로 유지합니다.
-
-```text
-최근 기록 불러오기
-→ 운동 수정
-→ 운동 추가
-→ 아직 저장하지 않은 상태
-→ 원래 Drive 기록 삭제
-→ 현재 입력 목록은 그대로 유지
-→ 이후 다른 최근 기록도 새로고침 없이 삭제 가능
-```
-
-## AI 분석 실행 방식
-
-AI 분석은 자동 실행되지 않습니다. 사용자가 PWA에서 `AI 분석 실행` 버튼을 눌렀을 때만 다음 순서로 실행됩니다.
-
-```text
-AI 분석 실행
-→ 분석 시작일 확인
-→ Health/Fitness/Strength JSON 수집
-→ Apps Script에서 수치 통계 계산
-→ OpenAI API 호출
-→ Analysis JSON 저장
-→ PWA에 결과 표시
-```
-
-분석 시작일은 PWA에서 선택할 수 있습니다. 기본값은 마지막 분석일 기준으로 이어서 분석할 수 있도록 설정합니다.
-
-## 현재 AI 분석에 포함되는 항목
-
-### 체중감량 관련
-
-- 체중
-- 체지방률
-- BMI
-- 허리둘레가 있을 경우 복부지방 참고 지표
-- 활동 에너지
-- 운동시간
-- 걷기/달리기 거리
-
-식사 데이터가 없으면 AI는 칼로리 적자를 임의로 계산하지 않습니다.
-
-### 유산소 관련
-
-- 유산소 세션 수
-- 총 유산소 시간
-- 거리
-- 평균 페이스
-- 평균 심박수
-- 최대 심박수
-- 평균 케이던스
-- 활동 칼로리
-- GPS 반복 경로 여부
-- 느린 야외 걷기 제외 여부
-
-추가로 Apps Script는 Health Auto Export가 제공하는 분단위 운동 지표를 이용해 다음 세부값을 AI 입력에 포함합니다.
-
-- 1km 단위 추정 스플릿
-- km별 평균 심박수
-- km별 평균 케이던스
-- 심박수 영역별 체류 시간
-- 운동 후 심박수 회복
-
-이 값은 `minute_level_estimate`로 표시되며, Apple Fitness의 초단위 원본값처럼 과도하게 단정하지 않도록 OpenAI 지침에 포함되어 있습니다.
-
-### 근력운동 관련
-
-- 근력운동 세션 수
-- 운동별 세트 수
-- 반복 수
-- 총 볼륨
-- 최근 중량
-- 평균 RPE
-- 통증 기록
-
-근력운동 수동 기록은 2026-07-20부터 시작된 것으로 간주합니다. 그 이전 근력운동 공백은 실제 운동 부재가 아니라 기록 누락 가능성으로 봅니다.
-
-## 고정 AI 규칙
-
-현재 Apps Script에는 다음 고정 규칙이 포함되어 있습니다.
-
-- 목표는 체중감량과 근력 유지 또는 향상이다.
-- 제공된 측정값만 근거로 사용한다.
-- 식사 데이터가 없으면 칼로리 적자를 추정하지 않는다.
-- 통증 기록을 최우선으로 반영한다.
-- 허리 통증 또는 악화 신호가 있으면 허리에 부담되는 동작을 제외한다.
-- 의료 진단을 하지 않는다.
-- 7월 초 실내 걷기와 최근 실내 달리기/실내 운동은 Apple Watch 운동명 선택 차이일 수 있으므로, 운동명 변화 자체를 운동 방식 전환으로 해석하지 않는다.
-- 같은 실내 유산소 흐름은 거리, 시간, 페이스, 심박수, 케이던스, 활동칼로리 기준으로 비교한다.
-- 유산소 세부 지표는 분단위 추정값으로만 사용한다.
-
-## PWA 업데이트 주의사항
-
-PWA는 서비스워커 캐시를 사용합니다.
-
-현재 프런트엔드 캐시 버전은 `workout-logger-ai-v14`입니다.
-
-GitHub Pages에 파일을 수정해도 아이폰 홈 화면 앱에 이전 캐시가 남을 수 있습니다. 화면 파일을 수정한 뒤 반영이 이상하면 다음 순서를 사용합니다.
+반영이 이상하면 다음 순서로 초기화합니다.
 
 1. 아이폰 홈 화면의 기존 PWA 삭제
 2. Safari에서 GitHub Pages 주소 접속
 3. 필요하면 Safari 웹사이트 데이터에서 `hong26sj.github.io` 삭제
 4. 다시 홈 화면에 추가
 
-Apps Script만 수정하는 경우에는 GitHub Pages/PWA 캐시와 무관합니다. Apps Script 코드를 교체하고 새 버전으로 배포하면 됩니다.
+Apps Script만 수정한 경우에는 PWA 캐시와 무관하며 Apps Script를 새 버전으로 재배포하면 됩니다.
 
-## Apps Script 배포 절차
+## 주의사항
 
-Apps Script 코드를 수정한 경우:
-
-1. Google Apps Script 편집기 열기
-2. `Code.gs` 내용을 저장소의 `google-apps-script.gs` 내용으로 교체
-3. 필요한 경우 `appsscript.json` 확인
-4. 저장
-5. 배포
-6. 배포 관리
-7. 기존 웹 앱 선택
-8. 새 버전으로 배포
-
-웹 앱 URL은 기존 `/exec` URL을 유지합니다.
-
-## OpenAI 설정
-
-Apps Script의 스크립트 속성에 다음 값이 필요합니다.
-
-```text
-OPENAI_API_KEY
-OPENAI_MODEL
-```
-
-현재 기본 모델은 코드상 `gpt-5-mini`입니다.
-
-API 키는 절대로 GitHub, PWA 코드, `app.js`, `index.html`에 넣지 않습니다.
-
-## 운영 체크리스트
-
-AI 분석 전 확인:
-
-- Health Auto Export가 최신 Health JSON을 Drive에 저장했는가
-- Fitness JSON이 최신 운동 기록을 포함하는가
-- 근력운동 기록을 PWA에 입력했는가
-- 분석 시작일이 원하는 기간으로 설정되어 있는가
-- 추가 요청사항이 필요한 경우 입력했는가
-
-문제가 있을 때 확인:
-
-- Drive의 Health/Fitness 파일 날짜
-- Analysis 폴더의 최신 분석 JSON
-- Apps Script 실행 로그
-- OpenAI API 키와 결제 상태
-- PWA 캐시 여부
-- 최근 기록 삭제 시 확인창이 뜨는지
-- 최근 기록 삭제 후 현재 입력 목록이 유지되는지
-
-## 향후 추가 후보
-
-아직 반영하지 않은 후보 기능입니다.
-
-- 데이터 진단 리포트
-- source 우선순위와 중복 측정 정리 강화
-- 수면/HRV 기반 회복 분석
-- 로컬 또는 저비용 모델 선택 옵션
-- 분석 결과의 원인 추적용 summary JSON 별도 저장
-
+- `OPENAI_API_KEY`, `APP_PASSWORD`, Drive 폴더 ID를 GitHub Issue, README, 소스코드에 커밋하지 않습니다.
+- Apps Script 웹 앱 URL은 API Key와 같은 비밀키는 아니지만 불필요하게 외부에 공유하지 않는 것이 좋습니다.
+- 휴대전화를 분실했거나 인증 토큰 유출이 의심되면 Apps Script의 토큰 시크릿/버전을 변경하거나 토큰을 전부 무효화한 뒤 다시 로그인하도록 합니다.
