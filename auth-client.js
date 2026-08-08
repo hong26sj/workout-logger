@@ -36,6 +36,33 @@
     document.getElementById('appRoot')?.classList.remove('auth-hidden');
   }
 
+  async function refreshAuthenticatedData() {
+    const tasks = [];
+
+    try {
+      if (typeof loadDriveSessions === 'function') {
+        tasks.push(Promise.resolve(loadDriveSessions(false)));
+      }
+    } catch (error) {
+      console.warn('최근 운동기록 자동 불러오기 실패:', error);
+    }
+
+    try {
+      if (typeof loadLatestAnalysis === 'function') {
+        tasks.push(Promise.resolve(loadLatestAnalysis(false)));
+      }
+    } catch (error) {
+      console.warn('마지막 AI 분석 자동 불러오기 실패:', error);
+    }
+
+    if (!tasks.length) return;
+    await Promise.allSettled(tasks);
+
+    try {
+      if (typeof updateSyncStatus === 'function') updateSyncStatus();
+    } catch (_) {}
+  }
+
   async function readJsonResponse(response) {
     const result = await response.clone().json().catch(() => null);
     if (result && (result.error_code === 'UNAUTHORIZED' || result.error === 'UNAUTHORIZED')) {
@@ -96,7 +123,7 @@
       localStorage.setItem(TOKEN_EXPIRES_KEY, result.expires_at || '');
       pinInput.value = '';
       showApp();
-      location.reload();
+      await refreshAuthenticatedData();
     } catch (error) {
       if (status) status.textContent = error.message || String(error);
     } finally {
@@ -149,7 +176,15 @@
     return originalFetch(input, init);
   };
 
-  window.workoutAuth = {post, token, clearAuth, showLogin, showApp, logout};
+  window.workoutAuth = {
+    post,
+    token,
+    clearAuth,
+    showLogin,
+    showApp,
+    logout,
+    refreshAuthenticatedData
+  };
 
   document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('authLoginBtn')?.addEventListener('click', login);
@@ -165,7 +200,11 @@
     });
 
     const valid = await verify();
-    if (valid) showApp();
-    else showLogin();
+    if (valid) {
+      showApp();
+      await refreshAuthenticatedData();
+    } else {
+      showLogin();
+    }
   });
 })();
