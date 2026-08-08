@@ -1,10 +1,11 @@
-const CACHE_VERSION = 'workout-logger-ai-v12';
+const CACHE_VERSION = 'workout-logger-ai-v13';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './activity-comparison.css',
   './app.js',
+  './session-delete-fix.js',
   './activity-comparison.js',
   './manifest.webmanifest',
   './icon-192.png',
@@ -39,6 +40,7 @@ self.addEventListener('fetch', event => {
     request.mode === 'navigate' ||
     url.pathname.endsWith('/index.html') ||
     url.pathname.endsWith('/app.js') ||
+    url.pathname.endsWith('/session-delete-fix.js') ||
     url.pathname.endsWith('/activity-comparison.js') ||
     url.pathname.endsWith('/styles.css') ||
     url.pathname.endsWith('/activity-comparison.css') ||
