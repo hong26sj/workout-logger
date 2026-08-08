@@ -9,24 +9,9 @@
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="activity-comparison.css" />
-  <style>
-    .auth-hidden{display:none!important}.auth-gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.auth-gate.hidden{display:none}.auth-card{width:min(100%,420px)}.auth-card input{font-size:1.2rem;letter-spacing:.12em;text-align:center}.auth-card .primary{width:100%;margin-top:12px}
-  </style>
 </head>
 <body>
-  <section id="authGate" class="auth-gate">
-    <div class="card auth-card">
-      <p class="eyebrow">WORKOUT LOGGER</p><h1>기기 인증</h1>
-      <p class="help">이 기기에서 처음 한 번만 숫자 비밀번호를 입력합니다. 인증은 180일 동안 유지됩니다.</p>
-      <label>비밀번호<input id="authPin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" maxlength="12" /></label>
-      <button id="authLoginBtn" type="button" class="primary">인증</button><div id="authStatus" class="sync-status"></div>
-    </div>
-  </section>
-  <div id="appRoot" class="auth-hidden">
-  <header class="topbar">
-    <div><p class="eyebrow">WORKOUT LOGGER</p><h1>근력 운동 기록</h1></div>
-    <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙︎</button>
-  </header>
+  <header class="topbar"><div><p class="eyebrow">WORKOUT LOGGER</p><h1>근력 운동 기록</h1></div><button id="settingsBtn" class="icon-btn" aria-label="설정">⚙︎</button></header>
   <main>
     <section class="card">
       <div class="section-head"><h2>운동 기록</h2><span id="todayLabel" class="muted"></span></div>
@@ -46,9 +31,7 @@
   <dialog id="settingsDialog"><form method="dialog" class="dialog-card"><div class="section-head"><h2>설정</h2><button value="cancel" class="icon-btn">✕</button></div><label>Google Apps Script 웹 앱 URL<input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" /></label><p class="help">기본 URL이 앱에 내장되어 있습니다. 주소가 변경된 경우에만 수정하세요.</p><div class="actions"><button id="saveSettingsBtn" value="default" class="primary">저장</button></div></form></dialog>
   <dialog id="analysisDialog"><form method="dialog" class="dialog-card" id="analysisForm"><div class="section-head"><h2>AI 분석 추가 요청</h2><button value="cancel" class="icon-btn">✕</button></div><p class="help">비워두면 기본 분석을 실행합니다. 기존 분석에 이어 특별히 반영할 내용을 입력할 수 있습니다.</p><label>분석 시작일<input id="analysisFromDate" type="date" /></label><label>추가 요청사항<textarea id="analysisRequest" rows="5" placeholder="예: 이번 주는 허리 회복을 우선하고, 체중감량을 위한 유산소 계획을 자세히 세워줘."></textarea></label><label class="check-label"><input id="forceAnalysis" type="checkbox" /> 새 기록이 없어도 다시 분석</label><div class="actions dialog-actions"><button value="cancel" class="secondary">취소</button><button id="confirmAnalysisBtn" value="default" class="primary">분석 시작</button></div></form></dialog>
   <div id="toast" class="toast" role="status"></div>
-  </div>
   <script src="app.js"></script>
-  <script src="auth-client.js"></script>
   <script src="session-delete-fix.js"></script>
   <script src="exercise-picker.js"></script>
   <script src="activity-comparison.js"></script>
