@@ -1,20 +1,42 @@
 (() => {
-  const historyList = document.getElementById('historyList');
-  if (!historyList) return;
+  // app.js의 기존 renderCurrent()는 `.delete-btn`을 문서 전체에서 찾기 때문에
+  // 최근 기록의 "Drive 삭제" 버튼까지 입력 목록 삭제 핸들러로 덮어쓸 수 있다.
+  // renderCurrent 자체를 교체해 입력 목록(#exerciseList) 내부 버튼에만 이벤트를 연결한다.
+  renderCurrent = function renderCurrentScoped() {
+    $("exerciseCount").textContent = `${state.current.length}개`;
+    $("emptyState").style.display = state.current.length ? "none" : "block";
+    $("saveSessionBtn").disabled = !state.current.length;
+    $("clearBtn").disabled = !state.current.length;
 
-  // app.js의 renderCurrent()가 `.delete-btn` 전체에 클릭 핸들러를 다시 붙이면서
-  // 최근 기록의 "Drive 삭제" 버튼까지 입력 목록 삭제 핸들러로 덮어쓰는 문제를 차단한다.
-  // 이벤트 위임을 capture 단계에서 처리해, 잘못 덮어쓴 onclick보다 먼저 정확한 삭제 로직을 실행한다.
-  historyList.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-delete-session]');
-    if (!button || !historyList.contains(button)) return;
+    const exerciseList = $("exerciseList");
+    exerciseList.innerHTML = state.current.map((ex, i) => `
+      <article class="exercise-item">
+        <div class="item-head">
+          <div>
+            <div class="item-title">${escapeHtml(ex.exercise)}</div>
+            <div class="item-meta">${summary(ex)}${ex.rpe ? ` · RPE ${ex.rpe}` : ""}${ex.pain_level ? ` · 통증 ${ex.pain_level}/10` : ""}</div>
+          </div>
+          <div class="item-buttons">
+            <button class="edit-btn" data-edit="${i}">수정</button>
+            <button class="delete-btn" data-index="${i}">삭제</button>
+          </div>
+        </div>
+      </article>`).join("");
 
-    event.preventDefault();
-    event.stopImmediatePropagation();
+    exerciseList.querySelectorAll(".edit-btn").forEach(btn => {
+      btn.onclick = () => startEditExercise(Number(btn.dataset.edit));
+    });
 
-    const sessionIndex = Number(button.dataset.deleteSession);
-    if (!Number.isInteger(sessionIndex) || sessionIndex < 0) return;
+    exerciseList.querySelectorAll(".delete-btn").forEach(btn => {
+      btn.onclick = () => {
+        const idx = Number(btn.dataset.index);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= state.current.length) return;
 
-    deleteDriveSession(sessionIndex);
-  }, true);
+        state.current.splice(idx, 1);
+        if (state.editingIndex === idx) cancelEdit();
+        else if (state.editingIndex !== null && state.editingIndex > idx) state.editingIndex--;
+        renderCurrent();
+      };
+    });
+  };
 })();
