@@ -3,11 +3,12 @@
   const datalist = document.getElementById('exerciseOptions');
   if (!input || !datalist) return;
 
-  // iOS Safari는 autocomplete="off"를 무시하고 연락처/이름 자동완성을 제안하는 경우가 있다.
-  // 브라우저 기본 datalist 대신 직접 제어하는 운동명 선택창을 사용한다.
-  input.removeAttribute('list');
+  // 기본 datalist 연결은 유지한다.
+  // - 입력값이 비어 있을 때: 자체 전체목록을 입력창 아래에 표시
+  // - 한 글자라도 입력하면: 자체 목록을 닫고 iOS/Safari의 네이티브 datalist 후보를 사용
+  input.setAttribute('list', 'exerciseOptions');
   input.setAttribute('name', 'workout-exercise-name');
-  input.setAttribute('autocomplete', 'new-password');
+  input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocorrect', 'off');
   input.setAttribute('autocapitalize', 'none');
   input.setAttribute('spellcheck', 'false');
@@ -33,14 +34,23 @@
   function currentNames() {
     const names = new Set();
 
-    // app.js의 기본 운동명
+    // 앱 기본 운동명
     try {
       if (typeof DEFAULT_EXERCISES !== 'undefined') {
         DEFAULT_EXERCISES.forEach(name => names.add(String(name || '').trim()));
       }
     } catch (_) {}
 
-    // Drive에서 불러온 과거 운동명
+    // 현재 입력 중인 운동명도 즉시 후보에 포함
+    try {
+      if (typeof state !== 'undefined' && Array.isArray(state.current)) {
+        state.current.forEach(ex => names.add(String(ex.exercise || '').trim()));
+      }
+    } catch (_) {}
+
+    // Drive에서 불러온 과거 기록의 운동명.
+    // 따라서 목록에 없던 새 운동을 저장한 뒤 Drive 기록이 새로고침되면
+    // 다음 운동부터 전체목록과 datalist 양쪽에 자동으로 포함된다.
     try {
       if (typeof state !== 'undefined' && Array.isArray(state.sessions)) {
         state.sessions.forEach(session => {
@@ -49,7 +59,7 @@
       }
     } catch (_) {}
 
-    // datalist에 이미 렌더된 항목도 포함
+    // app.js가 이미 datalist에 넣은 항목도 보존
     datalist.querySelectorAll('option').forEach(option => {
       names.add(String(option.value || '').trim());
     });
@@ -57,17 +67,25 @@
     return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
   }
 
-  function renderMenu() {
-    const query = input.value.trim().toLocaleLowerCase('ko');
+  function syncDatalist() {
     const names = currentNames();
-    const matches = query
-      ? names.filter(name => name.toLocaleLowerCase('ko').includes(query))
-      : names;
+    datalist.innerHTML = names
+      .map(name => `<option value="${escapeHtml(name)}"></option>`)
+      .join('');
+    return names;
+  }
 
-    if (!matches.length) {
-      menu.innerHTML = '<div class="exercise-picker-empty">일치하는 운동명이 없습니다. 새 운동명은 그대로 입력할 수 있습니다.</div>';
+  function renderFullMenu() {
+    if (input.value.trim()) {
+      closeMenu();
+      return;
+    }
+
+    const names = syncDatalist();
+    if (!names.length) {
+      menu.innerHTML = '<div class="exercise-picker-empty">저장된 운동명이 없습니다.</div>';
     } else {
-      menu.innerHTML = matches.slice(0, 60).map(name =>
+      menu.innerHTML = names.slice(0, 80).map(name =>
         `<button type="button" class="exercise-picker-option" data-exercise-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`
       ).join('');
     }
@@ -78,9 +96,19 @@
     menu.classList.remove('show');
   }
 
-  input.addEventListener('focus', renderMenu);
-  input.addEventListener('click', renderMenu);
-  input.addEventListener('input', renderMenu);
+  input.addEventListener('focus', renderFullMenu);
+  input.addEventListener('click', () => {
+    if (!input.value.trim()) renderFullMenu();
+  });
+
+  input.addEventListener('input', () => {
+    // 문자를 입력하기 시작하면 자체 목록은 닫는다.
+    // list="exerciseOptions"는 유지되어 iOS/Safari가 키보드 위에
+    // 일치하는 네이티브 datalist 후보를 표시할 수 있다.
+    syncDatalist();
+    if (input.value.trim()) closeMenu();
+    else renderFullMenu();
+  });
 
   menu.addEventListener('pointerdown', event => {
     const button = event.target.closest('[data-exercise-name]');
@@ -88,6 +116,7 @@
     event.preventDefault();
     input.value = button.dataset.exerciseName || '';
     closeMenu();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
@@ -99,4 +128,8 @@
   input.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeMenu();
   });
+
+  // Drive 기록 로딩이 끝난 뒤 app.js가 datalist를 갱신하더라도
+  // 다음 포커스/입력 시 항상 전체 후보를 다시 합쳐 동기화한다.
+  syncDatalist();
 })();
