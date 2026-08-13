@@ -4,9 +4,13 @@
   const previousRecord = document.getElementById('previousRecord');
   if (!input || !datalist) return;
 
+  const LIST_ID = 'exerciseOptions';
+  let composing = false;
+  let lastCommittedValue = '';
+
   // iPhone/Safari의 기본 datalist UI만 사용한다.
   // 커스텀 드롭다운은 생성하지 않는다.
-  input.setAttribute('list', 'exerciseOptions');
+  input.setAttribute('list', LIST_ID);
   input.setAttribute('name', 'workout-exercise-name');
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocorrect', 'off');
@@ -52,6 +56,12 @@
 
   function normalizeName(value) {
     return String(value || '').trim().toLowerCase();
+  }
+
+  function isExactExerciseName(value) {
+    const key = normalizeName(value);
+    if (!key) return false;
+    return currentNames().some(name => normalizeName(name) === key);
   }
 
   function latestExerciseRecord(name) {
@@ -160,6 +170,22 @@
     if (typeof toast === 'function') toast('최근 기록의 무게·횟수·세트를 불러왔습니다.');
   }
 
+  function commitNativeSelection() {
+    if (composing) return;
+    const value = input.value.trim();
+    if (!value || !isExactExerciseName(value) || value === lastCommittedValue) return;
+
+    lastCommittedValue = value;
+    setTimeout(() => {
+      if (input.value.trim() !== value) return;
+      // iOS에서 datalist 후보를 한 번 더 확정해야 하는 현상을 막기 위해
+      // 정확한 후보 선택 직후 list 연결을 끊고 포커스를 해제한다.
+      input.removeAttribute('list');
+      input.blur();
+      renderRecentRecordCard();
+    }, 0);
+  }
+
   if (previousRecord) {
     previousRecord.addEventListener('click', event => {
       if (previousRecord.dataset.recentFill !== '1') return;
@@ -176,15 +202,32 @@
     });
   }
 
-  // 과거 Drive 기록이나 현재 입력목록이 갱신된 뒤에도
-  // 포커스/입력 시 후보 목록을 다시 합쳐 최신 상태로 유지한다.
-  input.addEventListener('focus', syncDatalist);
-  input.addEventListener('input', syncDatalist);
-
-  // app.js의 기존 최근 기록 표시가 실행된 뒤 터치 가능한 카드로 갱신한다.
-  ['focus', 'input', 'change'].forEach(type => {
-    input.addEventListener(type, () => setTimeout(renderRecentRecordCard, 0));
+  input.addEventListener('focus', () => {
+    lastCommittedValue = '';
+    syncDatalist();
+    input.setAttribute('list', LIST_ID);
   });
+
+  input.addEventListener('compositionstart', () => {
+    composing = true;
+  });
+
+  input.addEventListener('compositionend', () => {
+    composing = false;
+    setTimeout(commitNativeSelection, 0);
+  });
+
+  input.addEventListener('input', event => {
+    setTimeout(renderRecentRecordCard, 0);
+    if (!event.isComposing) commitNativeSelection();
+  });
+
+  input.addEventListener('change', () => {
+    setTimeout(renderRecentRecordCard, 0);
+    commitNativeSelection();
+  });
+
+  input.addEventListener('blur', () => setTimeout(renderRecentRecordCard, 0));
 
   syncDatalist();
   renderRecentRecordCard();
