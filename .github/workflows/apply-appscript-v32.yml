@@ -1,5 +1,6 @@
 name: Apply Apps Script v3.2 patch
 
+# One-shot workflow. It removes itself after applying the patch.
 on:
   push:
     branches: [main]
