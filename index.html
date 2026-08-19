@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="activity-comparison.css" />
+  <link rel="stylesheet" href="ai-integrated-ui.css" />
   <style>
     .auth-hidden{display:none!important}.auth-gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f3f4f6}.auth-gate.hidden{display:none}.auth-card{width:min(100%,420px);background:#fff;border-radius:18px;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.12)}.auth-card h1{margin:4px 0 8px}.auth-card input{font-size:1.1rem;letter-spacing:.12em}.auth-card .primary{width:100%;margin-top:12px}.auth-status{min-height:1.4em;margin-top:10px;color:#b91c1c}.security-help{font-size:.88rem;color:#6b7280;line-height:1.5}
   </style>
@@ -40,11 +41,11 @@
         <button id="addExerciseBtn" class="primary">운동 추가</button><button id="cancelEditBtn" class="secondary hidden">수정 취소</button>
       </section>
       <section class="card"><div class="section-head"><h2>입력 목록</h2><span id="exerciseCount" class="badge">0개</span></div><div id="emptyState" class="empty">아직 입력된 운동이 없습니다.</div><div id="exerciseList" class="exercise-list"></div><div class="actions"><button id="saveSessionBtn" class="primary" disabled>선택한 날짜로 저장</button><button id="clearBtn" class="secondary" disabled>목록 비우기</button></div></section>
-      <section class="card ai-card"><div class="section-head"><div><p class="eyebrow">OPENAI COACH</p><h2>AI 운동·체중감량 분석</h2></div><span id="analysisBadge" class="badge">분석 없음</span></div><p class="help">버튼을 누를 때만 Health, Fitness, 근력운동 기록을 분석하고 Drive에 별도 JSON으로 저장합니다.</p><button id="runAnalysisBtn" class="primary">AI 분석 실행</button><button id="refreshAnalysisBtn" class="secondary">마지막 분석 불러오기</button><div id="analysisStatus" class="sync-status"></div><div id="analysisResult" class="analysis-result"><div class="empty">저장된 AI 분석이 없습니다.</div></div></section>
+      <section class="card ai-card"><div class="section-head"><div><p class="eyebrow">OPENAI COACH</p><h2>AI 통합 분석</h2></div><span id="analysisBadge" class="badge">분석 없음</span></div><p class="help">버튼을 누를 때만 Health, Fitness, 근력운동, Nutrition 원본을 집계하고 회복·영양·운동·체중감량을 함께 분석해 Drive에 별도 JSON으로 저장합니다.</p><button id="runAnalysisBtn" class="primary">AI 분석 실행</button><button id="refreshAnalysisBtn" class="secondary">마지막 분석 불러오기</button><div id="analysisStatus" class="sync-status"></div><div id="analysisResult" class="analysis-result"><div class="empty">저장된 AI 분석이 없습니다.</div></div></section>
       <section class="card"><div class="section-head"><h2>최근 기록</h2><div class="history-actions"><button id="refreshDriveBtn" class="text-btn">Drive 새로고침</button><button id="exportAllBtn" class="text-btn">전체 내보내기</button></div></div><div id="syncStatus" class="sync-status"></div><div id="historyList" class="history-list"></div></section>
     </main>
     <dialog id="settingsDialog"><form method="dialog" class="dialog-card"><div class="section-head"><h2>설정</h2><button value="cancel" class="icon-btn">✕</button></div><label>Google Apps Script 웹 앱 URL<input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" /></label><p class="help">웹 앱 URL이 변경된 경우에만 수정하세요.</p><button id="authLogoutBtn" type="button" class="secondary">이 기기 인증 해제</button><div class="actions"><button id="saveSettingsBtn" value="default" class="primary">저장</button></div></form></dialog>
-    <dialog id="analysisDialog"><form method="dialog" class="dialog-card" id="analysisForm"><div class="section-head"><h2>AI 분석 추가 요청</h2><button value="cancel" class="icon-btn">✕</button></div><p class="help">비워두면 기본 분석을 실행합니다. 기존 분석에 이어 특별히 반영할 내용을 입력할 수 있습니다.</p><label>분석 시작일<input id="analysisFromDate" type="date" /></label><label>추가 요청사항<textarea id="analysisRequest" rows="5" placeholder="예: 이번 주는 허리 회복을 우선하고, 체중감량을 위한 유산소 계획을 자세히 세워줘."></textarea></label><label class="check-label"><input id="forceAnalysis" type="checkbox" /> 새 기록이 없어도 다시 분석</label><div class="actions dialog-actions"><button value="cancel" class="secondary">취소</button><button id="confirmAnalysisBtn" value="default" class="primary">분석 시작</button></div></form></dialog>
+    <dialog id="analysisDialog"><form method="dialog" class="dialog-card" id="analysisForm"><div class="section-head"><h2>AI 분석 추가 요청</h2><button value="cancel" class="icon-btn">✕</button></div><p class="help">비워두면 기본 통합 분석을 실행합니다. 기존 분석에 이어 특별히 반영할 내용을 입력할 수 있습니다.</p><label>분석 시작일<input id="analysisFromDate" type="date" /></label><label>추가 요청사항<textarea id="analysisRequest" rows="5" placeholder="예: 이번 주는 허리 회복을 우선하고, 체중감량을 위한 유산소 계획을 자세히 세워줘."></textarea></label><label class="check-label"><input id="forceAnalysis" type="checkbox" /> 새 기록이 없어도 다시 분석</label><div class="actions dialog-actions"><button value="cancel" class="secondary">취소</button><button id="confirmAnalysisBtn" value="default" class="primary">분석 시작</button></div></form></dialog>
     <div id="toast" class="toast" role="status"></div>
   </div>
   <script src="app.js"></script>
@@ -52,5 +53,6 @@
   <script src="session-delete-fix.js"></script>
   <script src="exercise-picker.js"></script>
   <script src="activity-comparison.js"></script>
+  <script src="ai-integrated-ui.js"></script>
 </body>
 </html>
