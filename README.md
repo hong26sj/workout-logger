@@ -1,6 +1,6 @@
 # Workout Logger
 
-Apple Watch / Apple Health 데이터와 수동 근력운동 기록을 Google Drive에 모아, 사용자가 요청할 때만 AI 분석을 실행하는 개인용 PWA입니다.
+Apple Watch / Apple Health 데이터와 수동 근력운동 기록, 식단 기록을 Google Drive에 모아, 사용자가 요청할 때만 AI 통합 분석을 실행하는 개인용 PWA입니다.
 
 ## 보안 원칙
 
@@ -21,7 +21,7 @@ Google Drive에서 사용할 폴더를 브라우저로 엽니다. 주소창은 �
 https://drive.google.com/drive/folders/여기가_폴더_ID
 ```
 
-`/folders/` 뒤의 문자열이 폴더 ID입니다. Health, Fitness, Strength 폴더 각각에서 ID를 확인합니다.
+`/folders/` 뒤의 문자열이 폴더 ID입니다. Health, Fitness, Strength, Nutrition 폴더 각각에서 ID를 확인합니다.
 
 확인한 값은 GitHub 코드에 넣지 말고 Google Apps Script에서 다음과 같이 등록합니다.
 
@@ -34,6 +34,7 @@ https://drive.google.com/drive/folders/여기가_폴더_ID
 HEALTH_FOLDER_ID      = Health 폴더 ID
 FITNESS_FOLDER_ID     = Fitness 폴더 ID
 STRENGTH_FOLDER_ID    = Strength 폴더 ID
+NUTRITION_FOLDER_ID   = Nutrition 폴더 ID
 OPENAI_API_KEY        = OpenAI API Key
 OPENAI_MODEL          = gpt-5-mini
 APP_PASSWORD          = 앱에서 사용할 숫자 6~12자리 비밀번호
@@ -56,11 +57,17 @@ Google Apps Script (토큰 인증)
         ↓
 Google Drive Strength JSON
 
+Nutrition 원본 JSON
+        ↓
+Google Drive Nutrition
+
 PWA AI 분석 실행
         ↓
 Google Apps Script (토큰 인증 + 호출 제한)
         ↓
-Health + Fitness + Strength 집계
+Health + Fitness + Strength + Nutrition 집계
+        ↓
+회복/영양/운동/체중감량 통계 생성
         ↓
 OpenAI API
         ↓
@@ -96,11 +103,11 @@ PWA와 Apps Script 사이에는 다음 정책을 사용합니다.
 
 ## Apps Script 적용 절차
 
-저장소의 `google-apps-script.gs`는 참고/백업용입니다. 실제 보안 적용은 Apps Script 편집기의 `Code.gs`에 보안 적용본을 넣고 새 버전으로 배포해야 완료됩니다.
+저장소의 `google-apps-script.gs`는 참고/백업용입니다. 실제 적용은 Apps Script 편집기의 `Code.gs`에 현재 통합 분석 적용본을 넣고 새 버전으로 배포해야 완료됩니다.
 
 1. Google Apps Script 편집기를 엽니다.
 2. 기존 `Code.gs`를 백업합니다.
-3. 제공받은 보안 적용 Apps Script 전체 코드를 `Code.gs`에 붙여넣습니다.
+3. 통합 분석 적용 Apps Script 전체 코드를 `Code.gs`에 붙여넣습니다.
 4. 위의 스크립트 속성을 모두 등록합니다.
 5. 저장합니다.
 6. `배포` → `배포 관리`로 이동합니다.
@@ -116,10 +123,15 @@ PWA와 Apps Script 사이에는 다음 정책을 사용합니다.
 - Fitness/Workout 데이터: JSON
 - Workout Metrics 포함
 - Heart Rate 포함
+- HRV 포함
+- Sleep Analysis 포함
+- Respiratory Rate 포함
+- Blood Oxygen Saturation 포함
 - Distance 포함
 - Step Cadence 포함
 - Active Energy 포함
 - Heart Rate Recovery 포함 가능하면 포함
+- Physical Effort 포함
 - Time Grouping: Minutes
 
 분 단위 내보내기는 Apple Fitness 앱의 초 단위 계산과 약간 다를 수 있으므로 AI 분석에서는 분 단위 추정값으로 취급합니다.
@@ -128,24 +140,32 @@ PWA와 Apps Script 사이에는 다음 정책을 사용합니다.
 
 PWA에서 운동일자, 운동명, 기록 유형, 무게, 횟수, 세트, 시간, RPE, 통증 정도/부위, 메모를 기록합니다. 최근 기록은 Google Drive를 단일 원본으로 사용합니다.
 
-운동명 입력창은 iOS Safari의 `datalist` 및 연락처 자동완성 문제를 피하기 위해 자체 운동명 선택창을 사용합니다. 입력창을 터치하면 전체 운동 목록이 표시되고, 글자를 입력하면 후보가 필터링됩니다.
+운동명 입력은 iOS Safari의 기본 `datalist`를 사용하며, 정확한 운동명을 선택하면 최근 기록 카드가 표시됩니다.
 
-## AI 분석
+## AI 통합 분석
 
-AI 분석은 자동 실행되지 않고 사용자가 버튼을 누른 경우에만 실행됩니다. Health/Fitness/Strength JSON을 집계하고 OpenAI API를 호출한 뒤 결과를 Analysis 폴더에 JSON으로 저장합니다.
+AI 분석은 자동 실행되지 않고 사용자가 버튼을 누른 경우에만 실행됩니다. Health/Fitness/Strength/Nutrition JSON을 집계하고 OpenAI API를 호출한 뒤 결과를 Analysis 폴더에 JSON으로 저장합니다.
 
-식사 데이터가 없으면 칼로리 적자를 임의로 계산하지 않으며, 통증 기록과 데이터 품질 제한을 우선 반영합니다.
+PWA 분석 결과는 다음 순서로 표시합니다.
+
+```text
+종합 평가        기본 펼침
+현재 수치        기본 펼침
+회복 상태        기본 접힘
+영양 상태        기본 접힘
+운동 분석        기본 접힘
+체중감량 분석    기본 접힘
+다음 운동 계획   기본 접힘
+주의사항         기본 접힘
+```
+
+회복 분석은 HRV, 안정시 심박, 수면, 수면 중 심박, SpO₂, 호흡수 등을 사용합니다. 영양 분석에서 불완전 기록일의 `recorded_total`은 실제 하루 총섭취량으로 간주하지 않고 최소 기록 섭취량으로만 취급합니다. 완전 기록일 평균을 우선하고, 누락 끼니 보정치는 원본과 분리된 추정값으로만 사용합니다.
 
 ## PWA 업데이트
 
-서비스워커 캐시를 사용하므로 GitHub Pages 변경 후 아이폰 홈 화면 앱에 이전 버전이 남을 수 있습니다. 현재 캐시 버전은 `workout-logger-ai-v17`입니다.
+서비스워커 캐시를 사용하므로 GitHub Pages 변경 후 아이폰 홈 화면 앱에 이전 버전이 남을 수 있습니다. 현재 캐시 버전은 `workout-logger-ai-v23`입니다.
 
-반영이 이상하면 다음 순서로 초기화합니다.
-
-1. 아이폰 홈 화면의 기존 PWA 삭제
-2. Safari에서 GitHub Pages 주소 접속
-3. 필요하면 Safari 웹사이트 데이터에서 `hong26sj.github.io` 삭제
-4. 다시 홈 화면에 추가
+앱은 실행 시 서비스워커 업데이트를 확인하고 새 버전이 활성화되면 자동으로 새로고침합니다. 반영이 이상하면 홈 화면 PWA를 완전히 종료한 뒤 다시 실행하거나 Safari에서 페이지를 다시 열어 확인합니다.
 
 Apps Script만 수정한 경우에는 PWA 캐시와 무관하며 Apps Script를 새 버전으로 재배포하면 됩니다.
 
@@ -153,4 +173,4 @@ Apps Script만 수정한 경우에는 PWA 캐시와 무관하며 Apps Script를 
 
 - `OPENAI_API_KEY`, `APP_PASSWORD`, Drive 폴더 ID를 GitHub Issue, README, 소스코드에 커밋하지 않습니다.
 - Apps Script 웹 앱 URL은 API Key와 같은 비밀키는 아니지만 불필요하게 외부에 공유하지 않는 것이 좋습니다.
-- 휴대전화를 분실했거나 인증 토큰 유출이 의심되면 Apps Script의 토큰 시크릿/버전을 변경하거나 토큰을 전부 무효화한 뒤 다시 로그인하도록 합니다.
+- 휴대전화를 분실했거나 인증 토큰 유출이 의심되면 Apps Script에서 발급된 인증 토큰을 전부 무효화한 뒤 다시 로그인하도록 합니다.
