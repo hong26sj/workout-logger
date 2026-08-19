@@ -113,3 +113,165 @@
   .nutrition-summary-head{display:block}
   .nutrition-summary-head span{display:block;margin-top:4px;text-align:left}
 }
+
+.section-status{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin:0 0 10px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#fbfbfc;
+}
+.section-status>span:first-child{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:900;
+}
+.food-recommendations{
+  display:grid;
+  gap:8px;
+  margin-top:8px;
+}
+.food-rec{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+  background:#fff;
+}
+.food-rec-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.food-rec-head strong{
+  font-size:12px;
+}
+.food-rec-head span{
+  flex:0 0 auto;
+  border-radius:999px;
+  padding:3px 6px;
+  background:#fef3c7;
+  color:#92400e;
+  font-size:10px;
+  font-weight:900;
+}
+.food-reason{
+  margin:6px 0 0!important;
+  color:var(--muted)!important;
+  font-size:11px!important;
+  line-height:1.45!important;
+}
+.food-chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:7px;
+}
+.food-chip{
+  display:inline-flex;
+  align-items:center;
+  min-height:27px;
+  padding:5px 8px;
+  border-radius:999px;
+  background:#f3f4f6;
+  color:#374151;
+  font-size:11px;
+  font-weight:700;
+}
+.training-viz{
+  display:grid;
+  gap:8px;
+  margin-bottom:10px;
+}
+.viz-card{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px;
+  background:#fbfbfc;
+}
+.viz-title{
+  margin-bottom:8px;
+  font-size:13px;
+  font-weight:900;
+}
+.freq-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.freq-box{
+  min-width:0;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:9px;
+  background:#fff;
+}
+.freq-box span{
+  color:var(--muted);
+  font-size:11px;
+  font-weight:800;
+}
+.freq-box strong{
+  display:block;
+  margin-top:2px;
+  font-size:20px;
+}
+.bar-track{
+  height:8px;
+  margin-top:7px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#e5e7eb;
+}
+.bar-fill{
+  height:100%;
+  border-radius:999px;
+  background:#111827;
+}
+.intensity-row{
+  display:grid;
+  grid-template-columns:56px 1fr 38px;
+  gap:7px;
+  align-items:center;
+  margin:8px 0;
+  font-size:11px;
+}
+.intensity-row .bar-track{
+  margin:0;
+}
+.intensity-row strong{
+  text-align:right;
+}
+.viz-note,
+.viz-empty{
+  margin:7px 0 0!important;
+  color:var(--muted)!important;
+  font-size:10px!important;
+  line-height:1.45!important;
+}
+.training-spark{
+  display:block;
+  width:100%;
+  height:82px;
+}
+.spark-axis{
+  stroke:#e5e7eb;
+  stroke-width:1;
+}
+.spark-line{
+  fill:none;
+  stroke:#111827;
+  stroke-width:3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.spark-points circle{
+  fill:#111827;
+}
+.spark-labels text{
+  fill:#6b7280;
+  font-size:8px;
+}
