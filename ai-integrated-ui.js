@@ -2,11 +2,23 @@
   const statusLabel = value => {
     const text = String(value || '자료 없음').trim();
     const key = text.toLowerCase();
+    const allowed = new Set(['양호','주의','부족','자료 없음']);
+
     let tone = 'neutral';
-    if (/좋|양호|적정|안정|정상|개선|good|stable|adequate/.test(key)) tone = 'good';
+    if (/위험|악화|문제|경고|poor|risk/.test(key)) tone = 'bad';
     else if (/주의|보완|부족|낮|높|저하|관찰|caution|low|high/.test(key)) tone = 'warn';
-    else if (/위험|악화|문제|경고|poor|risk/.test(key)) tone = 'bad';
-    return `<span class="assessment-status assessment-${tone}">${escapeHtml(text)}</span>`;
+    else if (/좋|양호|적정|안정|정상|개선|good|stable|adequate/.test(key)) tone = 'good';
+
+    let label = text;
+    if (!allowed.has(label)) {
+      if (/자료\s*없|데이터\s*없|판단\s*불가|insufficient data|unavailable/.test(key)) label = '자료 없음';
+      else if (/부족/.test(key)) label = '부족';
+      else if (tone === 'good') label = '양호';
+      else if (tone === 'warn' || tone === 'bad') label = '주의';
+      else label = '상세';
+    }
+
+    return `<span class="assessment-status assessment-${tone}" title="${escapeHtml(text)}">${escapeHtml(label)}</span>`;
   };
 
   const compactList = items => (items && items.length)
