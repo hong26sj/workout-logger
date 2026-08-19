@@ -1,0 +1,106 @@
+.assessment-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:2px 0 12px;
+}
+.assessment-grid>div{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+  background:#fbfbfc;
+}
+.assessment-grid>div>span:first-child{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:900;
+}
+.assessment-status{
+  display:inline-flex;
+  align-items:center;
+  border-radius:999px;
+  padding:4px 8px;
+  font-size:11px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.assessment-good{background:#dcfce7;color:#166534}
+.assessment-warn{background:#fef3c7;color:#92400e}
+.assessment-bad{background:#fee2e2;color:#991b1b}
+.assessment-neutral{background:#eef0f3;color:#4b5563}
+.overall-summary{
+  margin-top:10px!important;
+  padding:12px;
+  border-radius:12px;
+  background:#f8fafc;
+  border:1px solid var(--line);
+  font-size:14px!important;
+  color:var(--text)!important;
+}
+.metrics-2{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.metric small{
+  display:block;
+  margin-top:4px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.35;
+}
+.recovery-stage-row,
+.nutrition-quality-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:8px;
+}
+.recovery-stage-row span,
+.nutrition-quality-row span{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:5px 8px;
+  border-radius:999px;
+  background:#f3f4f6;
+  color:#4b5563;
+  font-size:11px;
+  font-weight:700;
+}
+.analysis-copy{
+  margin-top:10px;
+  border-top:1px solid var(--line);
+  padding-top:8px;
+}
+.data-quality-note{
+  margin-top:8px!important;
+  padding:8px 10px;
+  border-radius:10px;
+  background:#f9fafb;
+  color:var(--muted)!important;
+  font-size:11px!important;
+  line-height:1.55!important;
+}
+.nutrition-summary-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+  margin-bottom:8px;
+}
+.nutrition-summary-head strong{font-size:13px}
+.nutrition-summary-head span{font-size:11px;color:var(--muted);text-align:right}
+.analysis-block h3{
+  margin:12px 0 5px;
+  font-size:13px;
+}
+@media(max-width:360px){
+  .assessment-grid,.metrics-2{grid-template-columns:1fr}
+  .nutrition-summary-head{display:block}
+  .nutrition-summary-head span{display:block;margin-top:4px;text-align:left}
+}
