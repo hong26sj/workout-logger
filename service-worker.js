@@ -1,14 +1,16 @@
-const CACHE_VERSION = 'workout-logger-ai-v22';
+const CACHE_VERSION = 'workout-logger-ai-v23';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './activity-comparison.css',
+  './ai-integrated-ui.css',
   './app.js',
   './auth-client.js',
   './session-delete-fix.js',
   './exercise-picker.js',
   './activity-comparison.js',
+  './ai-integrated-ui.js',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png'
@@ -25,7 +27,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  const isAppFile = request.mode === 'navigate' || /\/(index\.html|app\.js|auth-client\.js|session-delete-fix\.js|exercise-picker\.js|activity-comparison\.js|styles\.css|activity-comparison\.css|manifest\.webmanifest|service-worker\.js)$/.test(url.pathname);
+  const isAppFile = request.mode === 'navigate' || /\/(index\.html|app\.js|auth-client\.js|session-delete-fix\.js|exercise-picker\.js|activity-comparison\.js|ai-integrated-ui\.js|styles\.css|activity-comparison\.css|ai-integrated-ui\.css|manifest\.webmanifest|service-worker\.js)$/.test(url.pathname);
   event.respondWith(isAppFile ? networkFirst(request) : cacheFirst(request));
 });
 async function networkFirst(request) {
