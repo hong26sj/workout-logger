@@ -1,8 +1,4 @@
-/**
- * Workout Logger - Apps Script entrypoint/config
- * Split backup structure: Code / Security / Data / Analysis / AI
- * All five files must exist in the same Apps Script project.
- */
+/** Workout Logger - Apps Script entrypoint/config. All five files belong in one Apps Script project. */
 
 const SECURITY_PROPERTIES_ = PropertiesService.getScriptProperties();
 
@@ -24,7 +20,6 @@ const ANALYSIS_FOLDER_NAME = 'Analysis';
 const BASELINE_FOLDER_NAME = 'Baseline';
 const STRENGTH_INDEX_FILE_NAME_ = 'recent-strength-index.json';
 const STRENGTH_INDEX_SCHEMA_VERSION_ = 1;
-
 function jsonResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
