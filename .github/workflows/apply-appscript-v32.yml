@@ -1,0 +1,30 @@
+name: Apply Apps Script v3.2 patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply Apps Script patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f WorkoutLogger_Code_AI_Integrated_v3.2.patch
+          git apply WorkoutLogger_Code_AI_Integrated_v3.2.patch
+          rm WorkoutLogger_Code_AI_Integrated_v3.2.patch
+          rm .github/workflows/apply-appscript-v32.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update integrated Apps Script to prompt v3.2"
+          git push origin HEAD:main
