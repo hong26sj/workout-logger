@@ -100,7 +100,10 @@
     const fitness = stats.fitness || {};
 
     const strengthSessions = (strength.daily_sessions || []).filter(x => isRecentSeven(x.date || x.finished_at || x.started_at, periodTo));
-    const cardioSource = activity.cardio_sessions || fitness.cardio_sessions || [];
+    const fullFitnessSessions = Array.isArray(fitness.sessions) ? fitness.sessions : [];
+    const cardioSource = fullFitnessSessions.length
+      ? fullFitnessSessions.filter(x => x.is_walk_run && !x.cardio_exclusion_reason)
+      : (activity.cardio_sessions || fitness.cardio_sessions || []);
     const cardioSessions = cardioSource.filter(x => isRecentSeven(x.start || x.date, periodTo));
 
     const strengthCount = strengthSessions.length;
