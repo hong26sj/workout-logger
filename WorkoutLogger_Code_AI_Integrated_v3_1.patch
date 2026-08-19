@@ -1,0 +1,26 @@
+--- WorkoutLogger_Code_AI_Integrated_v3.gs
++++ WorkoutLogger_Code_AI_Integrated_v3.gs
+@@ -693,7 +693,7 @@
+       next_plan:ai.next_plan,
+       warnings:ai.warnings,
+       model:getOpenAiModel_(),
+-      prompt_version:'3.0'
++      prompt_version:'3.1'
+     };
+@@ -1791,10 +1791,10 @@
+   const key=getOpenAiKey_(); if(!key)throw new Error('스크립트 속성 OPENAI_API_KEY가 설정되지 않았습니다.');
+   const schema={type:'object',additionalProperties:false,properties:{
+     previous_plan_review:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},completion_rate:{type:['number','null']},completed:{type:'array',items:{type:'string'}},not_completed:{type:'array',items:{type:'string'}}},required:['summary','completion_rate','completed','not_completed']},
+-    overall_assessment:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},weight_status:{type:'string'},training_status:{type:'string'},recovery_status:{type:'string'},nutrition_status:{type:'string'},key_points:{type:'array',items:{type:'string'}}},required:['summary','weight_status','training_status','recovery_status','nutrition_status','key_points']},
+-    recovery_analysis:{type:'object',additionalProperties:false,properties:{status:{type:'string'},summary:{type:'string'},evidence:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['status','summary','evidence','limitations']},
+-    nutrition_analysis:{type:'object',additionalProperties:false,properties:{status:{type:'string'},summary:{type:'string'},evidence:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['status','summary','evidence','limitations']},
+-    ai_analysis:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},progress:{type:'array',items:{type:'string'}},concerns:{type:'array',items:{type:'string'}},recovery_status:{type:'string'},training_balance:{type:'string'}},required:['summary','progress','concerns','recovery_status','training_balance']},
++    overall_assessment:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},weight_status:{type:'string',enum:['양호','주의','부족','자료 없음']},training_status:{type:'string',enum:['양호','주의','부족','자료 없음']},recovery_status:{type:'string',enum:['양호','주의','부족','자료 없음']},nutrition_status:{type:'string',enum:['양호','주의','부족','자료 없음']},key_points:{type:'array',items:{type:'string'}}},required:['summary','weight_status','training_status','recovery_status','nutrition_status','key_points']},
++    recovery_analysis:{type:'object',additionalProperties:false,properties:{status:{type:'string',enum:['양호','주의','부족','자료 없음']},summary:{type:'string'},evidence:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['status','summary','evidence','limitations']},
++    nutrition_analysis:{type:'object',additionalProperties:false,properties:{status:{type:'string',enum:['양호','주의','부족','자료 없음']},summary:{type:'string'},evidence:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['status','summary','evidence','limitations']},
++    ai_analysis:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},progress:{type:'array',items:{type:'string'}},concerns:{type:'array',items:{type:'string'}},recovery_status:{type:'string',enum:['양호','주의','부족','자료 없음']},training_balance:{type:'string'}},required:['summary','progress','concerns','recovery_status','training_balance']},
+@@ -1813,6 +1813,7 @@
+     '사용자의 목표는 체중감량을 우선하면서 근력 유지 또는 향상을 추구하는 것이다.',
+     '제공된 측정값만 근거로 사용하고 의료 진단은 하지 않는다.',
+     '종합 평가는 체중·운동·회복·영양을 서로 연결해서 판단하되, 근거가 부족한 영역은 제한사항을 명시한다.',
++    '상태값 출력 규칙: overall_assessment의 weight_status, training_status, recovery_status, nutrition_status와 recovery_analysis.status, nutrition_analysis.status, ai_analysis.recovery_status에는 반드시 양호/주의/부족/자료 없음 중 하나만 출력한다. 상태 필드에는 이유·수치·문장·괄호 설명을 절대 넣지 말고 상세 근거는 summary, key_points, evidence, limitations에 작성한다.',
