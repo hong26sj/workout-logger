@@ -1,0 +1,115 @@
+name: Split Apps Script backup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/split-apps-script.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Split monolithic Apps Script into five files
+        run: |
+          python <<'PY'
+          import re
+          from pathlib import Path
+
+          src_path = Path('WorkoutLogger_Code_AI_Integrated_v3.gs')
+          src = src_path.read_text(encoding='utf-8')
+          starts = [(m.start(), m.group(1)) for m in re.finditer(r'^function\s+([A-Za-z0-9_]+)\s*\(', src, re.M)]
+          funcs = {}
+          for start, name in starts:
+              brace = src.find('{', start)
+              i, depth, state, quote, esc = brace + 1, 1, 'code', '', False
+              while i < len(src) and depth:
+                  c = src[i]
+                  n = src[i+1] if i + 1 < len(src) else ''
+                  if state == 'code':
+                      if c == '/' and n == '/': state = 'line'; i += 2; continue
+                      if c == '/' and n == '*': state = 'block'; i += 2; continue
+                      if c in ('"', "'", '`'): state = 'str'; quote = c; esc = False; i += 1; continue
+                      if c == '{': depth += 1
+                      elif c == '}': depth -= 1
+                      i += 1
+                  elif state == 'line':
+                      if c == '\n': state = 'code'
+                      i += 1
+                  elif state == 'block':
+                      if c == '*' and n == '/': state = 'code'; i += 2
+                      else: i += 1
+                  else:
+                      if esc: esc = False; i += 1; continue
+                      if c == '\\': esc = True; i += 1; continue
+                      if c == quote: state = 'code'; quote = ''
+                      i += 1
+              funcs[name] = src[start:i].rstrip() + '\n'
+
+          groups = {
+              'Code.gs': ['jsonResponse','doPost','doGet'],
+              'Security.gs': ['login_','createAuthToken_','verifyAuthToken_','unauthorized_','cleanupExpiredTokens_','consumeAnalysisQuota_','sha256Hex_','constantTimeEqual_','revokeAllAuthTokens'],
+              'Data.gs': ['saveStrengthSession_','listStrengthSessions_','rebuildStrengthIndex_','rebuildStrengthIndexInternal_','readStrengthIndex_','writeStrengthIndex_','attachStrengthDriveMeta_','upsertStrengthIndexByFileId_','removeStrengthIndexByFileId_','collectAnalysis_','collectJsonFiles_','collectJsonFilesRecursive_','inferJsonTimestamp_','newestTimestamp_','collectStrengthRecords_','deleteStrengthFile_','findStrengthFileById_','getSessionTimestamp_','getOrCreateFolder_'],
+              'Analysis.gs': ['buildStatistics_','buildRecoveryStatistics_','buildNutritionStatistics_','dedupeCollectedFiles_','hasNumber_','periodDaysFromStats_','normalizeRate_','buildMetricComparison_','buildActivityComparison_','parseDate_','normalizeAnalysisFrom_','formatIso_','startOfDay_','addDays_','sum_','avg_','round_','num_'],
+              'AI.gs': ['runAiAnalysis_','callOpenAI_','extractOutputText_','getBaselineSummary_','getLatestAnalysisResponse_','saveAnalysis_','findLatestAnalysis_','getOpenAiKey_','getOpenAiModel_','authorizeOpenAIConnection']
+          }
+          assigned = [x for g in groups.values() for x in g]
+          if set(assigned) != set(funcs) or len(assigned) != len(set(assigned)):
+              raise SystemExit('Function grouping mismatch; aborting split.')
+
+          constants = '''const SECURITY_PROPERTIES_ = PropertiesService.getScriptProperties();
+
+          const HEALTH_FOLDER_ID = SECURITY_PROPERTIES_.getProperty('HEALTH_FOLDER_ID') || '';
+          const FITNESS_FOLDER_ID = SECURITY_PROPERTIES_.getProperty('FITNESS_FOLDER_ID') || '';
+          const STRENGTH_FOLDER_ID = SECURITY_PROPERTIES_.getProperty('STRENGTH_FOLDER_ID') || '';
+          const NUTRITION_FOLDER_ID = SECURITY_PROPERTIES_.getProperty('NUTRITION_FOLDER_ID') || '';
+
+          const AUTH_TOKEN_TTL_SECONDS_ = 180 * 24 * 60 * 60; // 180일
+          const LOGIN_MAX_FAILURES_ = 5;
+          const LOGIN_LOCK_SECONDS_ = 10 * 60; // 10분
+          const ANALYSIS_MIN_INTERVAL_SECONDS_ = 60;
+          const ANALYSIS_DAILY_LIMIT_ = 10;
+
+          const TIME_ZONE = 'Asia/Seoul';
+          const INITIAL_LOOKBACK_DAYS = 28;
+          const OVERLAP_DAYS = 1;
+          const ANALYSIS_FOLDER_NAME = 'Analysis';
+          const BASELINE_FOLDER_NAME = 'Baseline';
+          const STRENGTH_INDEX_FILE_NAME_ = 'recent-strength-index.json';
+          const STRENGTH_INDEX_SCHEMA_VERSION_ = 1;
+          '''
+          headers = {
+              'Code.gs': '/** Workout Logger - Apps Script entrypoint/config. All five files belong in one Apps Script project. */\n\n' + constants,
+              'Security.gs': '/** Workout Logger - authentication, token, and AI quota controls. */\n\n',
+              'Data.gs': '/** Workout Logger - Drive persistence, collection, and strength index. */\n\n',
+              'Analysis.gs': '/** Workout Logger - statistics, recovery/nutrition/activity calculations, and analysis helpers. */\n\n',
+              'AI.gs': '/** Workout Logger - integrated AI orchestration, OpenAI call/schema/prompt, and analysis persistence. */\n\n'
+          }
+
+          out = Path('apps-script')
+          out.mkdir(exist_ok=True)
+          for filename, names in groups.items():
+              text = headers[filename] + '\n\n'.join(funcs[n].rstrip() for n in names) + '\n'
+              (out / filename).write_text(text, encoding='utf-8')
+
+          combined = '\n'.join((out / f).read_text(encoding='utf-8') for f in groups)
+          found = re.findall(r'^function\s+([A-Za-z0-9_]+)\s*\(', combined, re.M)
+          if len(found) != 59 or set(found) != set(funcs):
+              raise SystemExit('Split verification failed.')
+          src_path.unlink()
+          PY
+          cat apps-script/Code.gs apps-script/Security.gs apps-script/Data.gs apps-script/Analysis.gs apps-script/AI.gs > /tmp/workout-apps-script.js
+          node --check /tmp/workout-apps-script.js
+      - name: Commit split backup
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps-script/Code.gs apps-script/Security.gs apps-script/Data.gs apps-script/Analysis.gs apps-script/AI.gs WorkoutLogger_Code_AI_Integrated_v3.gs
+          git commit -m 'Split Apps Script backup into five modules'
+          git push
