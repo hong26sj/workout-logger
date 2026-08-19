@@ -693,7 +693,7 @@ function runAiAnalysis_(additionalRequest, force, analysisFromInput, analysisFro
       next_plan:ai.next_plan,
       warnings:ai.warnings,
       model:getOpenAiModel_(),
-      prompt_version:'3.1'
+      prompt_version:'3.2'
     };
     saveAnalysis_(analysis);
     return {ok:true,unchanged:false,analysis:analysis};
@@ -1793,7 +1793,18 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
     previous_plan_review:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},completion_rate:{type:['number','null']},completed:{type:'array',items:{type:'string'}},not_completed:{type:'array',items:{type:'string'}}},required:['summary','completion_rate','completed','not_completed']},
     overall_assessment:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},weight_status:{type:'string',enum:['양호','주의','부족','자료 없음']},training_status:{type:'string',enum:['양호','주의','부족','자료 없음']},recovery_status:{type:'string',enum:['양호','주의','부족','자료 없음']},nutrition_status:{type:'string',enum:['양호','주의','부족','자료 없음']},key_points:{type:'array',items:{type:'string'}}},required:['summary','weight_status','training_status','recovery_status','nutrition_status','key_points']},
     recovery_analysis:{type:'object',additionalProperties:false,properties:{status:{type:'string',enum:['양호','주의','부족','자료 없음']},summary:{type:'string'},evidence:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['status','summary','evidence','limitations']},
-    nutrition_analysis:{type:'object',additionalProperties:false,properties:{status:{type:'string',enum:['양호','주의','부족','자료 없음']},summary:{type:'string'},evidence:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['status','summary','evidence','limitations']},
+    nutrition_analysis:{type:'object',additionalProperties:false,properties:{
+      status:{type:'string',enum:['양호','주의','부족','자료 없음']},
+      summary:{type:'string'},
+      evidence:{type:'array',items:{type:'string'}},
+      limitations:{type:'array',items:{type:'string'}},
+      nutrient_recommendations:{type:'array',maxItems:3,items:{type:'object',additionalProperties:false,properties:{
+        nutrient:{type:'string'},
+        priority:{type:'string',enum:['높음','보통','낮음']},
+        reason:{type:'string'},
+        foods:{type:'array',minItems:1,maxItems:4,items:{type:'string'}}
+      },required:['nutrient','priority','reason','foods']}}
+    },required:['status','summary','evidence','limitations','nutrient_recommendations']},
     ai_analysis:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},progress:{type:'array',items:{type:'string'}},concerns:{type:'array',items:{type:'string'}},recovery_status:{type:'string',enum:['양호','주의','부족','자료 없음']},training_balance:{type:'string'}},required:['summary','progress','concerns','recovery_status','training_balance']},
     weight_loss_analysis:{type:'object',additionalProperties:false,properties:{summary:{type:'string'},weight_trend:{type:'string'},activity_assessment:{type:'string'},weekly_targets:{type:'array',items:{type:'string'}},limitations:{type:'array',items:{type:'string'}}},required:['summary','weight_trend','activity_assessment','weekly_targets','limitations']},
     next_plan:{type:'object',additionalProperties:false,properties:{period_days:{type:'integer'},weekly_goal:{type:'string'},daily_activity_target:{type:'object',additionalProperties:false,properties:{steps:{type:['integer','null']},cardio_minutes:{type:['integer','null']}},required:['steps','cardio_minutes']},sessions:{type:'array',items:{type:'object',additionalProperties:false,properties:{day_label:{type:'string'},focus:{type:'string'},exercises:{type:'array',items:{type:'object',additionalProperties:false,properties:{exercise:{type:'string'},record_type:{type:'string',enum:['weighted','bodyweight','timed']},sets:{type:'integer'},reps:{type:['integer','null']},seconds:{type:['integer','null']},suggested_weight_kg:{type:['number','null']},target_rpe:{type:['number','null']},reason:{type:'string'},pain_rule:{type:'string'}},required:['exercise','record_type','sets','reps','seconds','suggested_weight_kg','target_rpe','reason','pain_rule']}}},required:['day_label','focus','exercises']}},progression_rules:{type:'array',items:{type:'string'}},pain_rules:{type:'array',items:{type:'string'}}},required:['period_days','weekly_goal','daily_activity_target','sessions','progression_rules','pain_rules']},
@@ -1817,6 +1828,8 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
     '회복 규칙: statistics.recovery의 HRV, 안정시 심박, 수면, 수면중/일반 심박을 우선 사용하고 SpO2와 호흡수는 보조 근거로 사용한다. 단일 값보다 최근 3일·7일 및 이전 7일 비교를 우선한다. 수면 데이터가 희소하면 회복을 강하게 단정하지 않는다.',
     '영양 규칙: statistics.nutrition에서 complete 기록일의 recorded_total을 실제 하루 섭취량 근거로 최우선 사용한다. incomplete 기록일의 recorded_total은 최소 기록 섭취량(lower bound)일 뿐 실제 하루 총섭취량으로 간주하거나 complete-day 평균에 섞지 않는다.',
     '영양 추정 규칙: incomplete 기록일의 estimated_complete_total은 누락된 주식사에 대해 같은 meal_type의 근접 기록 중앙값으로 보정한 추정치다. 실제 기록과 추정치를 반드시 구분하고, 추정치를 사실처럼 표현하지 않는다. complete 실제값 > estimated_complete_total > incomplete recorded_total(lower bound) 순으로 신뢰한다.',
+    '영양 화면 요약 규칙: nutrition_analysis.summary는 모바일 화면에서 읽기 쉽게 핵심 판단만 한국어 2문장 이내, 가급적 180자 이내로 작성한다. 상세 근거는 evidence와 limitations에 분리한다.',
+    '추천 식단 규칙: nutrition_analysis.nutrient_recommendations는 최대 3개만 작성한다. 실제 Nutrition 기록 또는 제공된 통계로 부족/보완 필요성을 뒷받침할 수 있는 영양소·영양 목표만 선택하고, 데이터가 없는 미량영양소를 임의로 결핍이라고 추정하지 않는다. 각 항목 foods에는 한국에서 쉽게 구할 수 있는 음식 1~4개를 구체적으로 제안한다. 부족 근거가 없으면 빈 배열을 반환한다.',
     '에너지 균형 규칙: Nutrition 데이터가 불완전하거나 추정 비율이 높으면 정확한 칼로리 적자량을 단정하지 않는다. 활동에너지와 기초에너지는 측정/추정 기반 참고값이며 정확한 TDEE로 단정하지 않는다.',
     '통증 기록을 최우선으로 반영한다. 허리 통증이나 악화 신호가 있으면 허리에 부담되는 동작을 제외하고 필요하면 휴식 또는 진료를 권고한다.',
     '현실적인 7일 운동 계획을 작성한다.',
