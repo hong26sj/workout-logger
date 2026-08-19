@@ -43,6 +43,149 @@
     <div><span>영양</span>${statusLabel(overall.nutrition_status)}</div>
   </div>`;
 
+  const sectionStatusHtml = value => `<div class="section-status">
+    <span>현재 단계</span>${statusLabel(value)}
+  </div>`;
+
+  const shortSummary = (value, maxSentences = 2, maxChars = 190) => {
+    const text = String(value || '').trim().replace(/\s+/g, ' ');
+    if (!text) return '';
+    const parts = text.match(/[^.!?。！？]+[.!?。！？]?/g) || [text];
+    let out = parts.slice(0, maxSentences).join(' ').trim();
+    if (out.length > maxChars) out = `${out.slice(0, maxChars - 1).trim()}…`;
+    return out;
+  };
+
+  const parseDateValue = value => {
+    const d = new Date(value);
+    return Number.isFinite(d.getTime()) ? d : null;
+  };
+
+  const recentSevenStart = endValue => {
+    const end = parseDateValue(endValue) || new Date();
+    const start = new Date(end);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 6);
+    return start;
+  };
+
+  const isRecentSeven = (value, endValue) => {
+    const d = parseDateValue(value);
+    if (!d) return false;
+    const start = recentSevenStart(endValue);
+    const end = parseDateValue(endValue) || new Date();
+    end.setHours(23, 59, 59, 999);
+    return d >= start && d <= end;
+  };
+
+  const recommendationHtml = recommendations => {
+    const items = Array.isArray(recommendations) ? recommendations.slice(0, 3) : [];
+    if (!items.length) return '';
+    return `<h3>추천 식단</h3>
+      <div class="food-recommendations">
+        ${items.map(item => `<div class="food-rec">
+          <div class="food-rec-head">
+            <strong>${escapeHtml(item.nutrient || '영양 보완')}</strong>
+            <span>${escapeHtml(item.priority || '보통')}</span>
+          </div>
+          ${item.reason ? `<p class="food-reason">${escapeHtml(shortSummary(item.reason, 1, 90))}</p>` : ''}
+          <div class="food-chips">${(item.foods || []).slice(0, 4).map(food => `<span class="food-chip">${escapeHtml(food)}</span>`).join('')}</div>
+        </div>`).join('')}
+      </div>`;
+  };
+
+  const trainingVisualHtml = (stats, periodTo) => {
+    const strength = stats.strength || {};
+    const activity = stats.activity || {};
+    const fitness = stats.fitness || {};
+
+    const strengthSessions = (strength.daily_sessions || []).filter(x => isRecentSeven(x.date || x.finished_at || x.started_at, periodTo));
+    const cardioSource = activity.cardio_sessions || fitness.cardio_sessions || [];
+    const cardioSessions = cardioSource.filter(x => isRecentSeven(x.start || x.date, periodTo));
+
+    const strengthCount = strengthSessions.length;
+    const cardioCount = cardioSessions.length;
+    const maxCount = Math.max(strengthCount, cardioCount, 1);
+
+    const distribution = cardioSessions.reduce((acc, session) => {
+      const pe = session.physical_effort || {};
+      const low = Number(pe.low_minutes_est || 0);
+      const moderate = Number(pe.moderate_minutes_est || 0);
+      const vigorous = Number(pe.vigorous_minutes_est || 0);
+      if (low + moderate + vigorous > 0) {
+        acc.low += low;
+        acc.moderate += moderate;
+        acc.vigorous += vigorous;
+      } else {
+        const minutes = Number(session.duration_min || 0);
+        if (session.intensity_category === 'low') acc.low += minutes;
+        else if (session.intensity_category === 'moderate') acc.moderate += minutes;
+        else if (session.intensity_category === 'vigorous') acc.vigorous += minutes;
+      }
+      return acc;
+    }, {low:0, moderate:0, vigorous:0});
+
+    const distTotal = distribution.low + distribution.moderate + distribution.vigorous;
+    const distPct = key => distTotal > 0 ? Math.round(distribution[key] / distTotal * 100) : 0;
+
+    const end = parseDateValue(periodTo) || new Date();
+    const dayKeys = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(end);
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      dayKeys.push({key, label:i === 0 ? '오늘' : `${d.getMonth()+1}/${d.getDate()}`});
+    }
+    const minutesByDay = Object.fromEntries(dayKeys.map(x => [x.key, 0]));
+    cardioSessions.forEach(session => {
+      const d = parseDateValue(session.start || session.date);
+      if (!d) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if (Object.prototype.hasOwnProperty.call(minutesByDay, key)) minutesByDay[key] += Number(session.duration_min || 0);
+    });
+    const values = dayKeys.map(x => minutesByDay[x.key]);
+    const maxMinutes = Math.max(...values, 1);
+    const points = values.map((v, i) => {
+      const x = 12 + i * 48;
+      const y = 62 - (v / maxMinutes) * 46;
+      return `${x},${y.toFixed(1)}`;
+    }).join(' ');
+    const circles = values.map((v, i) => {
+      const x = 12 + i * 48;
+      const y = 62 - (v / maxMinutes) * 46;
+      return `<circle cx="${x}" cy="${y.toFixed(1)}" r="3"></circle>`;
+    }).join('');
+    const labels = dayKeys.map((x, i) => `<text x="${12 + i * 48}" y="78" text-anchor="${i === 0 ? 'start' : i === 6 ? 'end' : 'middle'}">${escapeHtml(x.label)}</text>`).join('');
+
+    return `<div class="training-viz">
+      <div class="viz-card">
+        <div class="viz-title">최근 7일 운동 구성</div>
+        <div class="freq-grid">
+          <div class="freq-box"><span>근력</span><strong>${strengthCount}회</strong><div class="bar-track"><div class="bar-fill" style="width:${Math.round(strengthCount/maxCount*100)}%"></div></div></div>
+          <div class="freq-box"><span>유산소</span><strong>${cardioCount}회</strong><div class="bar-track"><div class="bar-fill" style="width:${Math.round(cardioCount/maxCount*100)}%"></div></div></div>
+        </div>
+      </div>
+      <div class="viz-card">
+        <div class="viz-title">유산소 강도 분포</div>
+        ${distTotal > 0 ? `
+          <div class="intensity-row"><span>저강도</span><div class="bar-track"><div class="bar-fill" style="width:${distPct('low')}%"></div></div><strong>${distPct('low')}%</strong></div>
+          <div class="intensity-row"><span>중강도</span><div class="bar-track"><div class="bar-fill" style="width:${distPct('moderate')}%"></div></div><strong>${distPct('moderate')}%</strong></div>
+          <div class="intensity-row"><span>고강도</span><div class="bar-track"><div class="bar-fill" style="width:${distPct('vigorous')}%"></div></div><strong>${distPct('vigorous')}%</strong></div>
+        ` : '<p class="viz-empty">최근 7일 강도 데이터가 없습니다.</p>'}
+        <p class="viz-note">Fitness intensity(MET-equivalent)를 우선하고 Health physical_effort를 보조값으로 사용합니다.</p>
+      </div>
+      <div class="viz-card">
+        <div class="viz-title">최근 유산소 운동시간 추세</div>
+        <svg class="training-spark" viewBox="0 0 312 82" role="img" aria-label="최근 7일 유산소 운동시간 추세">
+          <line class="spark-axis" x1="8" y1="62" x2="304" y2="62"></line>
+          <polyline class="spark-line" points="${points}"></polyline>
+          <g class="spark-points">${circles}</g>
+          <g class="spark-labels">${labels}</g>
+        </svg>
+      </div>
+    </div>`;
+  };
+
   const recoveryHtml = (stats, ai) => {
     const r = stats.recovery || {};
     const hrv = r.hrv || {};
@@ -69,10 +212,10 @@
       <span>깨어있음 ${lastSleep.awake_hours == null ? '-' : formatNumber(lastSleep.awake_hours, 1) + 'h'}</span>
     </div>` : '';
 
-    return `${cards}${stages}
-      <div class="analysis-copy"><p><strong>평가:</strong> ${escapeHtml(ai.summary || '회복 평가 자료가 충분하지 않습니다.')}</p></div>
-      ${ai.evidence && ai.evidence.length ? `<h3>근거</h3>${compactList(ai.evidence)}` : ''}
-      ${ai.limitations && ai.limitations.length ? `<h3>데이터 제한</h3>${compactList(ai.limitations)}` : ''}
+    return `${sectionStatusHtml(ai.status)}${cards}${stages}
+      <div class="analysis-copy"><p><strong>평가:</strong> ${escapeHtml(shortSummary(ai.summary || '회복 평가 자료가 충분하지 않습니다.', 2, 190))}</p></div>
+      ${ai.evidence && ai.evidence.length ? `<h3>근거</h3>${compactList(ai.evidence.slice(0, 4))}` : ''}
+      ${ai.limitations && ai.limitations.length ? `<h3>데이터 제한</h3>${compactList(ai.limitations.slice(0, 3))}` : ''}
       <p class="data-quality-note">최근 7일 데이터: HRV ${quality.hrv_days_7d ?? 0}일 · 안정시 심박 ${quality.resting_hr_days_7d ?? 0}일 · 수면 ${quality.sleep_days_7d ?? 0}일 · SpO₂ ${quality.blood_oxygen_days_7d ?? 0}일</p>`;
   };
 
@@ -88,7 +231,8 @@
     const primary = complete || estimated || recorded;
     const primaryLabel = complete ? '완전 기록일 평균' : (estimated ? '보정 추정 평균' : '기록량 평균');
 
-    return `<div class="nutrition-summary-head">
+    return `${sectionStatusHtml(ai.status)}
+    <div class="nutrition-summary-head">
       <strong>${escapeHtml(primaryLabel)}</strong>
       <span>기록 ${n.days_recorded ?? 0}일 · 완전 ${n.complete_days ?? 0}일 · 불완전 ${n.incomplete_days ?? 0}일</span>
     </div>
@@ -102,10 +246,11 @@
       <span>완전 기록 비율 <strong>${completeRatio}</strong></span>
       <span>보정 가능 불완전일 <strong>${n.imputed_complete_days ?? 0}일</strong></span>
     </div>
-    <p class="data-quality-note">불완전 기록일의 recorded_total은 실제 하루 총섭취량이 아니라 최소 기록 섭취량으로만 취급합니다. 누락 끼니 보정치는 원본과 분리된 estimated_complete_total입니다.</p>
-    <div class="analysis-copy"><p><strong>평가:</strong> ${escapeHtml(ai.summary || '영양 평가 자료가 충분하지 않습니다.')}</p></div>
-    ${ai.evidence && ai.evidence.length ? `<h3>근거</h3>${compactList(ai.evidence)}` : ''}
-    ${ai.limitations && ai.limitations.length ? `<h3>데이터 제한</h3>${compactList(ai.limitations)}` : ''}`;
+    <div class="analysis-copy"><p><strong>평가:</strong> ${escapeHtml(shortSummary(ai.summary || '영양 평가 자료가 충분하지 않습니다.', 2, 190))}</p></div>
+    ${recommendationHtml(ai.nutrient_recommendations)}
+    ${ai.evidence && ai.evidence.length ? `<h3>근거</h3>${compactList(ai.evidence.slice(0, 3))}` : ''}
+    ${ai.limitations && ai.limitations.length ? `<h3>데이터 제한</h3>${compactList(ai.limitations.slice(0, 2))}` : ''}
+    <p class="data-quality-note">불완전 기록일은 실제 하루 총섭취량으로 간주하지 않고 완전 기록일을 우선해 평가합니다. 보정치는 원본과 분리된 추정값입니다.</p>`;
   };
 
   window.renderLatestAnalysis = function renderIntegratedAnalysis(analysis) {
@@ -145,8 +290,11 @@
       ${metric('BMI', body.bmi_latest == null ? '자료 없음' : formatNumber(body.bmi_latest, 1))}
     </div>`;
 
-    const trainingItems = (a.progress || []).concat(a.concerns || []).slice(0, 8);
-    const trainingBody = `<p>${escapeHtml(a.summary || '')}</p>${compactList(trainingItems)}<p><strong>운동 균형:</strong> ${escapeHtml(a.training_balance || '자료 없음')}</p>`;
+    const trainingItems = (a.progress || []).concat(a.concerns || []).slice(0, 5);
+    const trainingBody = `${trainingVisualHtml(stats, analysis.period?.to || analysis.created_at)}
+      <div class="analysis-copy"><p><strong>평가:</strong> ${escapeHtml(shortSummary(a.summary || '', 2, 200))}</p></div>
+      ${trainingItems.length ? `<h3>핵심 포인트</h3>${compactList(trainingItems)}` : ''}
+      <p><strong>운동 균형:</strong> ${escapeHtml(shortSummary(a.training_balance || '자료 없음', 2, 170))}</p>`;
 
     const weightLossBody = `<p>${escapeHtml(w.summary || '')}</p>
       <div class="trend-grid">
