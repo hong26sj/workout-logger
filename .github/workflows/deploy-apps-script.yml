@@ -1,0 +1,57 @@
+name: Deploy Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/**'
+      - '.clasp.json'
+      - '.github/workflows/deploy-apps-script.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOYMENT_ID: AKfycbxsQLOyMwtGe2lM8oTl6ABjH_WKM1ko2OUKPy0NjCtdLmYVE4ly9NKIq2C7QI58WhZELA
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare clasp authentication
+        id: auth
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "CLASPRC_JSON secret is not configured yet. Skipping Apps Script deployment."
+            exit 0
+          fi
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.auth.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install clasp
+        if: steps.auth.outputs.ready == 'true'
+        run: npm install --global @google/clasp@3.4.0
+
+      - name: Push Apps Script source
+        if: steps.auth.outputs.ready == 'true'
+        run: clasp push --force
+
+      - name: Redeploy existing web app
+        if: steps.auth.outputs.ready == 'true'
+        run: clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA}"
