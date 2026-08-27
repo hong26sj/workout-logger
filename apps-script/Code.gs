@@ -1,4 +1,5 @@
 /** Workout Logger - Apps Script entrypoint/config. All five files belong in one Apps Script project. */
+// Deployment rollback trigger only; no runtime logic change.
 
 const SECURITY_PROPERTIES_ = PropertiesService.getScriptProperties();
 
