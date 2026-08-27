@@ -6,7 +6,6 @@ on:
     paths:
       - 'apps-script/**'
       - '.clasp.json'
-      - '.github/workflows/deploy-apps-script.yml'
   workflow_dispatch:
 
 permissions:
@@ -54,4 +53,4 @@ jobs:
 
       - name: Redeploy existing web app
         if: steps.auth.outputs.ready == 'true'
-        run: clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA}"
+        run: clasp deploy --versionNumber 40 --deploymentId "$DEPLOYMENT_ID" --description "Rollback to version 40"
