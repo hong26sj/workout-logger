@@ -256,15 +256,18 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,nutritionFiles,
   };
 
   const cardioDisplayName=(w,distanceKm,paceMinPerKm,cadenceSpm,isWalkRun)=>{
-    const name=String(w&&w.name||'');
-    if(!isWalkRun)return name||'\uC6B4\uB3D9';
-    const genericIndoor=/^\s*(\uC2E4\uB0B4\s*\uC6B4\uB3D9|Indoor\s+Workout)\s*$/i.test(name);
-    if(!genericIndoor)return name||'\uC6B4\uB3D9';
-    if(Number(distanceKm)>0&&Number(paceMinPerKm)>0&&Number(cadenceSpm)>0){
-      return Number(paceMinPerKm)<=10||Number(cadenceSpm)>=120?'\uC2E4\uB0B4 \uB2EC\uB9AC\uAE30':'\uC2E4\uB0B4 \uAC77\uAE30';
-    }
-    return name||'\uC6B4\uB3D9';
-  };
+  const name=String(w&&w.name||'');
+  if(!isWalkRun)return name||'운동';
+  const genericIndoor=/^\s*(실내\s*운동|Indoor\s+Workout)\s*$/i.test(name);
+  const genericOutdoor=/^\s*(야외\s*운동|Outdoor\s+Workout)\s*$/i.test(name);
+  if(!genericIndoor&&!genericOutdoor)return name||'운동';
+  if(Number(distanceKm)>0&&Number(paceMinPerKm)>0&&Number(cadenceSpm)>0){
+    const isRun=Number(paceMinPerKm)<=10||Number(cadenceSpm)>=120;
+    if(genericIndoor)return isRun?'실내 달리기':'실내 걷기';
+    return isRun?'야외 달리기':'야외 걷기';
+  }
+  return name||'운동';
+};
 
   const metricSeries=(box)=>{
     const raw=Array.isArray(box)?box:(box&&Array.isArray(box.data)?box.data:[]);
@@ -444,14 +447,12 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,nutritionFiles,
       cardio_quality_detail:cardioQuality
     });
   }));
-  const routeCounts={};
-  workouts.forEach(w=>{if(w.is_walk_run&&w.route_signature)routeCounts[w.route_signature]=(routeCounts[w.route_signature]||0)+1;});
   workouts.forEach(w=>{
-    w.is_commute_like=!!(w.route_signature&&routeCounts[w.route_signature]>1);
-    w.is_slow_outdoor_walk=!!(w.has_gps_route&&Number(w.pace_min_per_km)>=15);
-    w.cardio_exclusion_reason=w.is_commute_like?'repeated_gps_route':(w.is_slow_outdoor_walk?'slow_outdoor_walk':null);
-  });
-  const cardioWorkouts=workouts.filter(w=>w.is_walk_run&&!w.cardio_exclusion_reason);
+  // 유산소 제외 여부는 GPS/경로 반복과 무관하게 평균 페이스만 사용합니다.
+  w.is_slow_pace=!!(w.is_walk_run&&Number(w.pace_min_per_km)>=15);
+  w.cardio_exclusion_reason=w.is_slow_pace?'slow_pace':null;
+});
+const cardioWorkouts=workouts.filter(w=>w.is_walk_run&&!w.cardio_exclusion_reason);
   const recentCardioWorkouts=cardioWorkouts.slice()
     .sort((a,b)=>parseDate_(a.start).getTime()-parseDate_(b.start).getTime())
     .slice(-5);
