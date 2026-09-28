@@ -106,6 +106,37 @@ function aiJobAdvance_(job){
   job.cursor=0;job.manifest_id=null;
   job.progress={step:job.stage,done:0,total:null};
 }
+// Retain only fields consumed by buildStatistics_; Health exports can contain
+// very large unrelated metric arrays and repeated per-sample source metadata.
+const AI_HEALTH_METRICS_={
+  active_energy:true,apple_exercise_time:true,apple_stand_time:true,
+  basal_energy_burned:true,blood_oxygen_saturation:true,body_fat_percentage:true,
+  body_mass_index:true,heart_rate:true,heart_rate_variability:true,
+  lean_body_mass:true,physical_effort:true,respiratory_rate:true,
+  resting_heart_rate:true,sleep_analysis:true,step_count:true,
+  vo2_max:true,waist_circumference:true,walking_heart_rate_average:true,
+  walking_running_distance:true,weight_body_mass:true
+};
+function compactAiHealthData_(source,from,to){
+  if(!source||!source.data||!Array.isArray(source.data.metrics))return source;
+  const min=from.getTime(),max=to.getTime();
+  const metrics=source.data.metrics.filter(m=>AI_HEALTH_METRICS_[m.name]).map(m=>{
+    const values=(m.data||[]).filter(v=>{
+      const date=parseDate_(v.date).getTime();
+      return isFinite(date)&&date>=min&&date<=max;
+    }).map(v=>{
+      if(m.name==='heart_rate')
+        return {date:v.date,Avg:v.Avg,Min:v.Min,Max:v.Max};
+      if(m.name==='sleep_analysis')
+        return {date:v.date,sleepStart:v.sleepStart,inBedStart:v.inBedStart,
+          sleepEnd:v.sleepEnd,inBedEnd:v.inBedEnd,totalSleep:v.totalSleep,
+          deep:v.deep,core:v.core,rem:v.rem,awake:v.awake,inBed:v.inBed,source:v.source};
+      return {date:v.date,qty:v.qty};
+    });
+    return {name:m.name,units:m.units,data:values};
+  }).filter(m=>m.data.length);
+  return {data:{metrics:metrics}};
+}
 function collectAiJobBatch_(job){
   const type=job.stage.slice('collect_'.length);
   const folderId=aiJobFolderId_(type);
@@ -134,7 +165,8 @@ function collectAiJobBatch_(job){
       const stamp=inferJsonTimestamp_(data,f);
       if(stamp>=parseDate_(job.read_from[type])&&stamp<=parseDate_(job.period_to)){
         records.push({file_id:f.getId(),name:f.getName(),size_bytes:raw.length,
-          modified_at:formatIso_(f.getLastUpdated()),timestamp:stamp.getTime(),data:data});
+          modified_at:formatIso_(f.getLastUpdated()),timestamp:stamp.getTime(),
+          data:type==='health'?compactAiHealthData_(data,parseDate_(job.read_from.health),parseDate_(job.period_to)):data});
       }
     }catch(e){
       const reason=String(e&&e.message||e);
