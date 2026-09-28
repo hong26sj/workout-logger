@@ -230,7 +230,17 @@ function collectJsonFilesRecursive_(folder,from,to,type,arr){const files=folder.
 
 function inferJsonTimestamp_(data,file){if(data&&data.date&&Array.isArray(data.meals))return parseDate_(String(data.date).slice(0,10)+'T23:59:59+09:00');if(data&&Array.isArray(data.exercises))return parseDate_(data.finished_at||data.started_at||file.getLastUpdated());const w=data&&data.data&&data.data.workouts;if(w&&w.length)return parseDate_(w[w.length-1].end||w[w.length-1].start||file.getLastUpdated());const m=data&&data.data&&data.data.metrics;if(m){let latest=0;m.forEach(x=>(x.data||[]).forEach(v=>{const t=parseDate_(v.date).getTime();if(t>latest)latest=t;}));if(latest)return new Date(latest);}const match=file.getName().match(/(20\d{2})-(\d{2})-(\d{2})/);if(match)return new Date(match[1]+'-'+match[2]+'-'+match[3]+'T23:59:59+09:00');return file.getLastUpdated();}
 
-function newestTimestamp_(arr){return arr.length?Math.max.apply(null,arr.map(x=>x.timestamp||0)):0;}
+// A historical daily export can be backfilled hours/days later. Treat Drive modification
+// time as new source data as well as the record's internal timestamp, otherwise a
+// corrected 9/25 file uploaded on 9/28 can be incorrectly considered "already analyzed".
+function newestTimestamp_(arr){
+  if(!arr||!arr.length)return 0;
+  return Math.max.apply(null,arr.map(x=>{
+    const recordTime=Number(x&&x.timestamp||0);
+    const modifiedTime=parseDate_(x&&x.modified_at||'').getTime();
+    return Math.max(recordTime,isFinite(modifiedTime)?modifiedTime:0);
+  }));
+}
 
 function collectStrengthRecords_(folder,sessions) {
   const files = folder.getFiles();
