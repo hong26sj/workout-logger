@@ -186,7 +186,7 @@ function findLatestAnalysis_(){
     const files=folder.getFiles();
     while(files.hasNext()){
       const file=files.next(),name=file.getName();
-      if(/^analysis-20\\d{2}-\\d{2}-\\d{2}_\\d{6}(?:-[a-f0-9]+)?\\.json$/i.test(name))
+      if(/^analysis-20\d{2}-\d{2}-\d{2}_\d{6}(?:-[a-f0-9]+)?\.json$/i.test(name))
         candidates.push({file:file,name:name});
     }
     const folders=folder.getFolders();
