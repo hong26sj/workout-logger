@@ -257,7 +257,8 @@ function collectStrengthRecords_(folder,sessions) {
     const sf = subs.next();
     if (
       sf.getName() !== ANALYSIS_FOLDER_NAME &&
-      sf.getName() !== BASELINE_FOLDER_NAME
+      sf.getName() !== BASELINE_FOLDER_NAME &&
+      sf.getName() !== AI_JOB_FOLDER_
     ) {
       collectStrengthRecords_(sf, sessions);
     }
@@ -316,7 +317,8 @@ function findStrengthFileById_(folder, targetFileId) {
 
     if (
       sub.getName() === ANALYSIS_FOLDER_NAME ||
-      sub.getName() === BASELINE_FOLDER_NAME
+      sub.getName() === BASELINE_FOLDER_NAME ||
+      sub.getName() === AI_JOB_FOLDER_
     ) {
       continue;
     }
