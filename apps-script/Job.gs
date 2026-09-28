@@ -64,6 +64,19 @@ function startAiJob_(additionalRequest,force,analysisFromInput,analysisFromManua
 function listAiJobStatus_(id){
   const job=readAiJob_();
   if(!job||id&&job.job_id!==String(id))return {ok:false,error_code:'JOB_NOT_FOUND',error:'분석 작업을 찾지 못했습니다.'};
+  if(job.status==='running'&&job.stage==='openai_inflight'&&Date.now()-parseDate_(job.updated_at).getTime()>7*60*1000){
+    // After a killed execution the API response might already have been charged.
+    // Reuse a completed result if persisted; otherwise require an explicit new job.
+    const saved=DriveApp.getFolderById(job.folder_id).getFilesByName('ai-result.json');
+    if(saved.hasNext()){
+      job.ai_file_id=saved.next().getId();
+      job.stage='save';job.progress={step:'save',done:0,total:1};
+    }else{
+      job.status='failed';job.error_code='AI_RESULT_UNKNOWN';
+      job.message='OpenAI 요청의 종료 결과를 확인할 수 없습니다. 자동 재호출을 차단했습니다.';
+    }
+    writeAiJob_(job);
+  }
   return publicAiJob_(job);
 }
 function aiJobCandidates_(folder,from,to,type,results){
