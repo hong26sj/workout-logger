@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DEPLOYMENT_ID: AKfycbxsQLOyMwtGe2lM8oTl6ABjH_WKM1ko2OUKPy0NjCtdLmYVE4ly9NKIq2C7QI58WhZELA
-      STABLE_VERSION: '40'
+      STABLE_VERSION: '43'
       WEB_APP_URL: https://script.google.com/macros/s/AKfycbxsQLOyMwtGe2lM8oTl6ABjH_WKM1ko2OUKPy0NjCtdLmYVE4ly9NKIq2C7QI58WhZELA/exec
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +47,13 @@ jobs:
 
       - name: Install clasp
         run: npm install --global @google/clasp@3.4.0
+
+      - name: Check Apps Script syntax and manifest
+        run: |
+          for file in apps-script/*.gs; do
+            node --check < "$file"
+          done
+          node -e "const m=require('./apps-script/appsscript.json'); if(!m.webapp || m.webapp.access!=='ANYONE_ANONYMOUS')process.exit(1)"
 
       - name: Push Apps Script source
         run: clasp push --force
