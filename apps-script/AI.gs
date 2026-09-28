@@ -177,7 +177,29 @@ function getLatestAnalysisResponse_(){const a=findLatestAnalysis_();return {ok:t
 
 function saveAnalysis_(analysis){const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID);const af=getOrCreateFolder_(root,ANALYSIS_FOLDER_NAME);const mf=getOrCreateFolder_(af,Utilities.formatDate(new Date(),TIME_ZONE,'yyyy-MM'));af.getName();mf.createFile(analysis.analysis_id+'.json',JSON.stringify(analysis,null,2),MimeType.PLAIN_TEXT);}
 
-function findLatestAnalysis_(){const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID);const fs=root.getFoldersByName(ANALYSIS_FOLDER_NAME);if(!fs.hasNext())return null;const arr=[];collectAnalysis_(fs.next(),arr);arr.sort((a,b)=>parseDate_(a.created_at).getTime()-parseDate_(b.created_at).getTime());return arr.length?arr[arr.length-1]:null;}
+// Select the latest analysis using filename metadata before opening JSON blobs.
+function findLatestAnalysis_(){
+  const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID),found=root.getFoldersByName(ANALYSIS_FOLDER_NAME);
+  if(!found.hasNext())return null;
+  const candidates=[];
+  const scan=folder=>{
+    const files=folder.getFiles();
+    while(files.hasNext()){
+      const file=files.next(),name=file.getName();
+      if(/^analysis-20\\d{2}-\\d{2}-\\d{2}_\\d{6}(?:-[a-f0-9]+)?\\.json$/i.test(name))
+        candidates.push({file:file,name:name});
+    }
+    const folders=folder.getFolders();
+    while(folders.hasNext())scan(folders.next());
+  };
+  scan(found.next());
+  candidates.sort((a,b)=>b.name.localeCompare(a.name));
+  for(let i=0;i<candidates.length;i++){
+    try{return JSON.parse(candidates[i].file.getBlob().getDataAsString('UTF-8'));}
+    catch(e){console.warn('analysis_load_failed '+candidates[i].name);}
+  }
+  return null;
+}
 
 function getOpenAiKey_(){return PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY')||'';}
 
