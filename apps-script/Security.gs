@@ -104,12 +104,12 @@ function verifyAuthToken_(token) {
   const raw = String(token || '').trim();
 
   if (!raw || raw.indexOf('.') < 1) {
-    return unauthorized_('인증 토큰이 없습니다.');
+    return unauthorized_('인증 토큰이 없습니다.', 'AUTH_TOKEN_MISSING');
   }
 
   const tokenId = raw.split('.')[0];
   if (!/^[a-fA-F0-9]{32}$/.test(tokenId)) {
-    return unauthorized_('인증 토큰 형식이 올바르지 않습니다.');
+    return unauthorized_('인증 토큰 형식이 올바르지 않습니다.', 'AUTH_TOKEN_FORMAT');
   }
 
   const props = PropertiesService.getScriptProperties();
@@ -117,7 +117,7 @@ function verifyAuthToken_(token) {
   const storedRaw = props.getProperty(key);
 
   if (!storedRaw) {
-    return unauthorized_('유효하지 않은 인증 토큰입니다.');
+    return unauthorized_('유효하지 않은 인증 토큰입니다.', 'AUTH_TOKEN_NOT_FOUND');
   }
 
   let stored;
@@ -125,17 +125,17 @@ function verifyAuthToken_(token) {
     stored = JSON.parse(storedRaw);
   } catch (_) {
     props.deleteProperty(key);
-    return unauthorized_('손상된 인증 토큰입니다.');
+    return unauthorized_('손상된 인증 토큰입니다.', 'AUTH_TOKEN_CORRUPT');
   }
 
   const now = Date.now();
   if (!stored.expires_at || Number(stored.expires_at) <= now) {
     props.deleteProperty(key);
-    return unauthorized_('인증 토큰이 만료되었습니다.');
+    return unauthorized_('인증 토큰이 만료되었습니다.', 'AUTH_TOKEN_EXPIRED');
   }
 
   if (!constantTimeEqual_(sha256Hex_(raw), String(stored.hash || ''))) {
-    return unauthorized_('유효하지 않은 인증 토큰입니다.');
+    return unauthorized_('유효하지 않은 인증 토큰입니다.', 'AUTH_TOKEN_MISMATCH');
   }
 
   return {
@@ -145,10 +145,10 @@ function verifyAuthToken_(token) {
   };
 }
 
-function unauthorized_(message) {
+function unauthorized_(message, reason) {
   return {
     ok: false,
-    error_code: 'UNAUTHORIZED',
+    error_code: reason || 'UNAUTHORIZED',
     error: 'UNAUTHORIZED',
     message: message || '인증이 필요합니다.'
   };
