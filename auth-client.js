@@ -63,11 +63,15 @@
     } catch (_) {}
   }
 
-  async function readJsonResponse(response) {
+  // Only a request made with the CURRENT token may invalidate that token.
+  // Late responses from pre-login or a previous session must not log out a fresh login.
+  async function readJsonResponse(response, requestToken = '') {
     const result = await response.clone().json().catch(() => null);
     if (result && (result.error_code === 'UNAUTHORIZED' || result.error === 'UNAUTHORIZED')) {
-      clearAuth();
-      showLogin('인증이 만료되었습니다. 숫자 비밀번호를 다시 입력하세요.');
+      if (requestToken && requestToken === token()) {
+        clearAuth();
+        showLogin('서버가 현재 인증을 거부했습니다. 숫자 비밀번호로 다시 인증하세요.');
+      }
     }
     return result;
   }
@@ -76,14 +80,15 @@
     const url = gasUrl();
     if (!url) throw new Error('Google Apps Script URL이 설정되지 않았습니다.');
     const body = Object.assign({}, payload || {});
-    if (includeAuth && token()) body.auth_token = token();
+    const requestToken = includeAuth ? token() : '';
+    if (requestToken) body.auth_token = requestToken;
     const response = await originalFetch(url, {
       method: 'POST',
       headers: {'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify(body),
       redirect: 'follow'
     });
-    const result = await readJsonResponse(response);
+    const result = await readJsonResponse(response, requestToken);
     if (!result) throw new Error('서버 응답을 확인할 수 없습니다.');
     return result;
   }
@@ -121,6 +126,13 @@
       }
       localStorage.setItem(TOKEN_KEY, result.auth_token);
       localStorage.setItem(TOKEN_EXPIRES_KEY, result.expires_at || '');
+      // Verify the issued token with the very same deployed endpoint before
+      // displaying the app; a successful PIN response alone is insufficient.
+      const checked = await post({action:'auth_check'});
+      if (!checked.ok || !checked.authenticated) {
+        clearAuth();
+        throw new Error(checked.message || checked.error || '새 인증 토큰이 서버에서 거부되었습니다. 웹 앱 URL과 배포를 확인하세요.');
+      }
       pinInput.value = '';
       showApp();
       await refreshAuthenticatedData();
@@ -139,40 +151,51 @@
   const originalFetch = window.fetch.bind(window);
 
   window.fetch = async function(input, init) {
-    try {
-      const url = typeof input === 'string' ? input : input?.url;
-      const target = gasUrl();
-      if (target && url && String(url).startsWith(target)) {
-        const options = Object.assign({}, init || {});
-        const method = String(options.method || 'GET').toUpperCase();
+    const url = typeof input === 'string' ? input : input?.url;
+    const target = gasUrl();
+    if (!target || !url || !String(url).startsWith(target)) {
+      return originalFetch(input, init);
+    }
 
-        if (method === 'POST' && options.body) {
-          try {
-            const parsed = JSON.parse(options.body);
-            if (parsed.action !== 'login' && token()) parsed.auth_token = token();
-            options.body = JSON.stringify(parsed);
-          } catch (_) {}
-          const response = await originalFetch(input, options);
-          await readJsonResponse(response);
-          return response;
+    const options = Object.assign({}, init || {});
+    const method = String(options.method || 'GET').toUpperCase();
+    if (method === 'POST' && options.body) {
+      let requestToken = '';
+      try {
+        const parsed = JSON.parse(options.body);
+        if (parsed.action !== 'login') {
+          requestToken = token();
+          if (requestToken) parsed.auth_token = requestToken;
         }
-
-        if (method === 'GET') {
-          const parsedUrl = new URL(url, location.href);
-          const action = parsedUrl.searchParams.get('action');
-          if (action === 'list' || action === 'latest_analysis') {
-            const response = await originalFetch(target, {
-              method:'POST',
-              headers:{'Content-Type':'text/plain;charset=utf-8'},
-              body:JSON.stringify({action:action, auth_token:token()}),
-              redirect:'follow'
-            });
-            await readJsonResponse(response);
-            return response;
-          }
-        }
+        options.body = JSON.stringify(parsed);
+      } catch (_) {
+        // Preserve non-JSON requests as-is.
       }
-    } catch (_) {}
+      const response = await originalFetch(input, options);
+      await readJsonResponse(response, requestToken);
+      return response;
+    }
+
+    if (method === 'GET') {
+      const parsedUrl = new URL(url, location.href);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'list' || action === 'latest_analysis') {
+        const requestToken = token();
+        // No anonymous data requests: avoid stale UNAUTHORIZED responses racing
+        // with login and being mistaken for a failed fresh authentication.
+        if (!requestToken) {
+          throw new Error('인증 후 데이터를 조회할 수 있습니다.');
+        }
+        const response = await originalFetch(target, {
+          method:'POST',
+          headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body:JSON.stringify({action, auth_token:requestToken}),
+          redirect:'follow'
+        });
+        await readJsonResponse(response, requestToken);
+        return response;
+      }
+    }
     return originalFetch(input, init);
   };
 
