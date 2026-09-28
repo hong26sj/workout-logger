@@ -226,7 +226,7 @@ function collectAnalysis_(folder,arr){const files=folder.getFiles();while(files.
 
 function collectJsonFiles_(folder,from,to,type){const arr=[];collectJsonFilesRecursive_(folder,from,to,type,arr);return arr;}
 
-function collectJsonFilesRecursive_(folder,from,to,type,arr){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/\.json$/i.test(f.getName()))continue;if(type==='strength'&&!/^strength-.*\.json$/i.test(f.getName()))continue;if(type==='nutrition'&&!/^nutrition-.*\.json$/i.test(f.getName()))continue;try{const blob=f.getBlob();const data=JSON.parse(blob.getDataAsString('UTF-8'));const t=inferJsonTimestamp_(data,f);if(t>=from&&t<=to)arr.push({file_id:f.getId(),name:f.getName(),size_bytes:blob.getBytes().length,modified_at:formatIso_(f.getLastUpdated()),timestamp:t.getTime(),data:data});}catch(e){console.log('JSON 읽기 실패 '+f.getName()+': '+e);}}const subs=folder.getFolders();while(subs.hasNext()){const sf=subs.next();if(type==='strength'&&(sf.getName()===ANALYSIS_FOLDER_NAME||sf.getName()===BASELINE_FOLDER_NAME))continue;collectJsonFilesRecursive_(sf,from,to,type,arr);}}
+function collectJsonFilesRecursive_(folder,from,to,type,arr){const files=folder.getFiles();while(files.hasNext()){const f=files.next();if(!/\.json$/i.test(f.getName()))continue;if(!isJsonDateCandidate_(f.getName(),from,to,type))continue;if(type==='strength'&&!/^strength-.*\.json$/i.test(f.getName()))continue;if(type==='nutrition'&&!/^nutrition-.*\.json$/i.test(f.getName()))continue;try{const blob=f.getBlob();const data=JSON.parse(blob.getDataAsString('UTF-8'));const t=inferJsonTimestamp_(data,f);if(t>=from&&t<=to)arr.push({file_id:f.getId(),name:f.getName(),size_bytes:blob.getBytes().length,modified_at:formatIso_(f.getLastUpdated()),timestamp:t.getTime(),data:data});}catch(e){console.log('JSON 읽기 실패 '+f.getName()+': '+e);}}const subs=folder.getFolders();while(subs.hasNext()){const sf=subs.next();if(type==='strength'&&(sf.getName()===ANALYSIS_FOLDER_NAME||sf.getName()===BASELINE_FOLDER_NAME))continue;collectJsonFilesRecursive_(sf,from,to,type,arr);}}
 
 function inferJsonTimestamp_(data,file){if(data&&data.date&&Array.isArray(data.meals))return parseDate_(String(data.date).slice(0,10)+'T23:59:59+09:00');if(data&&Array.isArray(data.exercises))return parseDate_(data.finished_at||data.started_at||file.getLastUpdated());const w=data&&data.data&&data.data.workouts;if(w&&w.length)return parseDate_(w[w.length-1].end||w[w.length-1].start||file.getLastUpdated());const m=data&&data.data&&data.data.metrics;if(m){let latest=0;m.forEach(x=>(x.data||[]).forEach(v=>{const t=parseDate_(v.date).getTime();if(t>latest)latest=t;}));if(latest)return new Date(latest);}const match=file.getName().match(/(20\d{2})-(\d{2})-(\d{2})/);if(match)return new Date(match[1]+'-'+match[2]+'-'+match[3]+'T23:59:59+09:00');return file.getLastUpdated();}
 
@@ -331,3 +331,20 @@ function findStrengthFileById_(folder, targetFileId) {
 function getSessionTimestamp_(s){return parseDate_(s.finished_at||s.started_at||s.created_at||s.date||0).getTime();}
 
 function getOrCreateFolder_(parent,name){const f=parent.getFoldersByName(name);return f.hasNext()?f.next():parent.createFolder(name);}
+
+// Conservative filename prefilter: skip historical daily exports without opening large JSON blobs.
+// Unrecognized filenames are never excluded; their internal timestamps remain authoritative.
+function isJsonDateCandidate_(name,from,to,type){
+  const n=String(name||'');
+  const dated=/(20\d{2})-(\d{2})-(\d{2})/.exec(n);
+  if(!dated)return true;
+  const known=(type==='health'&&/^HealthAutoExport-/i.test(n)) ||
+    (type==='fitness'&&/^(FitnessAutoExport|Fitness)-/i.test(n)) ||
+    (type==='nutrition'&&/^nutrition-/i.test(n)) ||
+    (type==='strength'&&/^strength-/i.test(n));
+  if(!known)return true;
+  const candidate=new Date(dated[1]+'-'+dated[2]+'-'+dated[3]+'T12:00:00+09:00').getTime();
+  if(!isFinite(candidate))return true;
+  const margin=36*3600000; // tolerate time zones and near-midnight entries
+  return candidate>=from.getTime()-margin&&candidate<=to.getTime()+margin;
+}
