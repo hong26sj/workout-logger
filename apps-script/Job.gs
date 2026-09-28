@@ -184,6 +184,7 @@ function aiJobOpenAi_(job){
   // An interrupted remote call is not retried automatically: its charge/outcome may be unknown.
   job.stage='openai_inflight';writeAiJob_(job);
   const started=Date.now();
+  console.log(JSON.stringify({event:'ai_openai_start',job_id:job.job_id}));
   const saved=JSON.parse(DriveApp.getFileById(job.stats_file_id).getBlob().getDataAsString('UTF-8'));
   const latest=findLatestAnalysis_();
   const ai=callOpenAI_(saved.statistics,latest,latest&&latest.next_plan||null,job.additional_request,saved.baseline);
@@ -193,6 +194,8 @@ function aiJobOpenAi_(job){
   console.log(JSON.stringify({event:'ai_openai_done',job_id:job.job_id,elapsed_ms:Date.now()-started}));
 }
 function aiJobSave_(job){
+  const saveStarted=Date.now();
+  console.log(JSON.stringify({event:'ai_save_start',job_id:job.job_id}));
   const stats=JSON.parse(DriveApp.getFileById(job.stats_file_id).getBlob().getDataAsString('UTF-8'));
   const ai=JSON.parse(DriveApp.getFileById(job.ai_file_id).getBlob().getDataAsString('UTF-8'));
   const createdAt=formatIso_(new Date());
@@ -217,7 +220,7 @@ function aiJobSave_(job){
   job.analysis_id=analysis.analysis_id;job.status='done';job.stage='done';
   job.progress={step:'done',done:1,total:1};job.message='AI 분석이 저장됐습니다.';
   writeAiJob_(job);
-  console.log(JSON.stringify({event:'ai_job_done',job_id:job.job_id,analysis_id:job.analysis_id}));
+  console.log(JSON.stringify({event:'ai_job_done',job_id:job.job_id,analysis_id:job.analysis_id,save_elapsed_ms:Date.now()-saveStarted}));
   try{DriveApp.getFolderById(job.folder_id).setTrashed(true);}catch(e){console.warn('ai_job_cleanup_failed');}
 }
 function stepAiJob_(jobId){
