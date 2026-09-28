@@ -700,7 +700,7 @@ function displayAiJobStatus(job){
   const name=aiJobStages[job.stage]||job.stage||'준비';
   const progress=job.progress&&Number.isFinite(job.progress.total)&&job.progress.total>0
     ? ' '+Math.min(job.progress.done||0,job.progress.total)+'/'+job.progress.total:'';
-  status.textContent='AI 분석 진행 중: '+name+progress+'. 페이지를 닫아도 다음에 이어서 진행할 수 있습니다.';
+  status.textContent='AI 분석 진행 중: '+name+progress+(job.error_code==='DRIVE_RETRY'?' · '+(job.message||'Drive 재시도 중'):'')+'. 페이지를 닫아도 다음에 이어서 진행할 수 있습니다.';
 }
 async function driveAiJob_(initialJob){
   if(analysisState.running)return;
@@ -717,7 +717,7 @@ async function driveAiJob_(initialJob){
         toast(job.message||'AI 분석을 저장했습니다.');
         return;
       }
-      if(job.status==='failed')throw new Error((job.error_code||'JOB_FAILED')+': '+(job.message||'단계 실행 실패'));
+      if(job.status==='failed')throw new Error((aiJobStages[job.stage]||job.stage||'알 수 없는 단계')+' · '+(job.error_code||'JOB_FAILED')+': '+(job.message||'단계 실행 실패'));
       displayAiJobStatus(job);
       if(job.stage==='openai_inflight'){
         if(Date.now()-new Date(job.updated_at).getTime()>7*60*1000){
