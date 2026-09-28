@@ -134,8 +134,18 @@ function callOpenAI_(stats,latest,previousPlan,additionalRequest,baseline) {
   const response=UrlFetchApp.fetch('https://api.openai.com/v1/responses',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+key},payload:JSON.stringify(payload),muteHttpExceptions:true});
   const code=response.getResponseCode(); const body=response.getContentText();
   if(code<200||code>=300)throw new Error('OpenAI API 오류 '+code+': '+body.substring(0,500));
-  const result=JSON.parse(body); const text=extractOutputText_(result); if(!text)throw new Error('OpenAI 응답에서 분석 JSON을 찾지 못했습니다.');
-  return JSON.parse(text);
+  const result=JSON.parse(body);
+  console.log(JSON.stringify({event:'openai_response',status:result.status||null,usage:result.usage||null,http_status:code}));
+  if(result.status!=='completed'){
+    const reason=result.incomplete_details&&result.incomplete_details.reason||result.error&&result.error.code||result.status||'unknown';
+    throw new Error('OPENAI_INCOMPLETE: '+String(reason).slice(0,120));
+  }
+  const outputText=extractOutputText_(result);
+  if(!outputText)throw new Error('OPENAI_EMPTY_OUTPUT: 분석 JSON을 찾지 못했습니다.');
+  let parsed;
+  try{parsed=JSON.parse(outputText);}catch(e){throw new Error('OPENAI_INVALID_JSON: '+String(e.message||e));}
+  if(!parsed||!parsed.overall_assessment||!parsed.next_plan||!parsed.nutrition_analysis)throw new Error('OPENAI_INVALID_SCHEMA: 필수 분석 항목 누락');
+  return parsed;
 }
 
 function extractOutputText_(result) {
