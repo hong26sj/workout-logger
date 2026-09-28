@@ -686,12 +686,102 @@ function resetAnalysisDialog(){
   $("analysisFromDate").value=defaultAnalysisFromDate();
   analysisState.fromDateTouched=false;
 }
+// A single analysis step reads at most five source files, or executes one compute/API/save stage.
+const aiJobStages={
+  collect_health:'건강기록 수집',collect_fitness:'유산소 기록 수집',
+  collect_strength:'근력운동 기록 수집',collect_nutrition:'식단기록 수집',
+  compute:'통계 계산',openai:'OpenAI 분석',openai_inflight:'OpenAI 응답 대기',
+  save:'분석 결과 저장',done:'완료'
+};
+const aiJobSleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function displayAiJobStatus(job){
+  const status=$("analysisStatus");
+  status.className='sync-status status-loading';
+  const name=aiJobStages[job.stage]||job.stage||'준비';
+  const progress=job.progress&&Number.isFinite(job.progress.total)&&job.progress.total>0
+    ? ' '+Math.min(job.progress.done||0,job.progress.total)+'/'+job.progress.total:'';
+  status.textContent='AI 분석 진행 중: '+name+progress+'. 페이지를 닫아도 다음에 이어서 진행할 수 있습니다.';
+}
+async function driveAiJob_(initialJob){
+  if(analysisState.running)return;
+  analysisState.running=true;
+  $("runAnalysisBtn").disabled=true;$("confirmAnalysisBtn").disabled=true;
+  let job=initialJob,transientFailures=0;
+  try{
+    for(let i=0;i<300;i++){
+      if(!job||!job.job_id)throw new Error('서버가 작업 ID를 반환하지 않았습니다.');
+      if(job.status==='done'){
+        await loadLatestAnalysis(false);
+        $("analysisStatus").className='sync-status status-ok';
+        $("analysisStatus").textContent=job.message||'AI 분석 완료';
+        toast(job.message||'AI 분석을 저장했습니다.');
+        return;
+      }
+      if(job.status==='failed')throw new Error((job.error_code||'JOB_FAILED')+': '+(job.message||'단계 실행 실패'));
+      displayAiJobStatus(job);
+      if(job.stage==='openai_inflight'){
+        if(Date.now()-new Date(job.updated_at).getTime()>7*60*1000){
+          throw new Error('OpenAI 요청 결과를 확인할 수 없습니다. 작업 ID: '+job.job_id.slice(0,8)+'. 자동 재호출하지 않습니다.');
+        }
+        await aiJobSleep(5000);
+        const response=await window.workoutAuth.post({action:'analysis_status',job_id:job.job_id});
+        if(!response.ok)throw new Error(response.error||response.error_code||'상태 조회 실패');
+        job=response.job;continue;
+      }
+      try{
+        const response=await window.workoutAuth.post({action:'analysis_step',job_id:job.job_id});
+        if(!response.ok){
+          if(response.error_code==='JOB_BUSY'){await aiJobSleep(2500);continue;}
+          throw new Error(response.error||response.error_code||'분석 단계 실패');
+        }
+        job=response.job;transientFailures=0;
+      }catch(error){
+        transientFailures++;
+        if(transientFailures>3)throw new Error('네트워크 연결이 끊겼습니다. 작업을 새로 만들지 말고 재접속 후 이어서 진행하세요. '+error.message);
+        await aiJobSleep(2500);
+        const status=await window.workoutAuth.post({action:'analysis_status',job_id:job.job_id});
+        if(!status.ok)throw new Error(status.error||'상태 확인 실패');
+        job=status.job;
+      }
+      await aiJobSleep(300);
+    }
+    throw new Error('분석이 예상보다 오래 걸립니다. 페이지 재접속 후 이어서 진행할 수 있습니다.');
+  }catch(error){
+    $("analysisStatus").className='sync-status status-warn';
+    $("analysisStatus").textContent='AI 분석 중단: '+error.message;
+    toast('분석 상태를 확인하세요.');
+  }finally{
+    analysisState.running=false;$("runAnalysisBtn").disabled=false;$("confirmAnalysisBtn").disabled=false;
+  }
+}
 async function executeAiAnalysis(){
   if(analysisState.running)return;
-  analysisState.running=true;$("runAnalysisBtn").disabled=true;$("confirmAnalysisBtn").disabled=true;$("analysisStatus").className='sync-status status-loading';$("analysisStatus").textContent='Health·Fitness·근력운동을 집계하고 OpenAI가 분석 중입니다. 최대 1~2분 걸릴 수 있습니다.';
-  const payload={action:'analyze',additional_request:$("analysisRequest").value.trim(),force:$("forceAnalysis").checked,analysis_from:$("analysisFromDate").value,analysis_from_manual:analysisState.fromDateTouched};
-  try{const r=await fetch(getGasUrl(),{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(payload),redirect:'follow'});const j=await r.json();if(!j.ok)throw new Error(j.error||'분석 실패');renderLatestAnalysis(j.analysis);$("analysisStatus").className='sync-status status-ok';$("analysisStatus").textContent=j.unchanged?(j.message||'새 기록이 없습니다.'):`분석 완료: ${new Date(j.analysis.created_at).toLocaleString('ko-KR')}`;toast(j.unchanged?'기존 분석을 표시합니다.':'AI 분석을 저장했습니다.');}catch(e){$("analysisStatus").className='sync-status status-warn';$("analysisStatus").textContent=`AI 분석 실패: ${e.message}`;toast('AI 분석에 실패했습니다.');}finally{analysisState.running=false;$("runAnalysisBtn").disabled=false;$("confirmAnalysisBtn").disabled=false;}
+  $("analysisStatus").className='sync-status status-loading';
+  $("analysisStatus").textContent='AI 분석 작업을 준비 중입니다...';
+  $("runAnalysisBtn").disabled=true;$("confirmAnalysisBtn").disabled=true;
+  const payload={action:'analyze_start',additional_request:$("analysisRequest").value.trim(),force:$("forceAnalysis").checked,analysis_from:$("analysisFromDate").value,analysis_from_manual:analysisState.fromDateTouched};
+  try{
+    const response=await window.workoutAuth.post(payload);
+    if(!response.ok)throw new Error(response.error||response.error_code||'작업 생성 실패');
+    await driveAiJob_(response.job);
+  }catch(error){
+    $("analysisStatus").className='sync-status status-warn';
+    $("analysisStatus").textContent='AI 분석 시작 실패: '+error.message;
+  }finally{
+    if(!analysisState.running){$("runAnalysisBtn").disabled=false;$("confirmAnalysisBtn").disabled=false;}
+  }
 }
+async function resumeAiAnalysisIfPending(){
+  if(analysisState.running||!window.workoutAuth?.token())return;
+  try{
+    const response=await window.workoutAuth.post({action:'analysis_status'});
+    if(response.ok&&response.job&&response.job.status==='running'){
+      await driveAiJob_(response.job);
+    }
+  }catch(error){console.warn('AI 작업 재개 상태 조회 실패:',error.message||error);}
+}
+window.addEventListener('online',()=>{if(!analysisState.running)resumeAiAnalysisIfPending();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!analysisState.running)resumeAiAnalysisIfPending();});
 $("runAnalysisBtn").onclick=()=>{resetAnalysisDialog();$("analysisDialog").showModal();};
 $("confirmAnalysisBtn").onclick=(e)=>{e.preventDefault();$("analysisDialog").close();executeAiAnalysis();};
 $("refreshAnalysisBtn").onclick=()=>loadLatestAnalysis(true);
