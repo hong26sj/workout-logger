@@ -1,7 +1,7 @@
 /** Resumable, browser-driven AI analysis. No installable trigger or extra OAuth scope. */
 const AI_JOB_PROPERTY_='WL_ACTIVE_AI_JOB_V1';
 const AI_JOB_FOLDER_='AnalysisJobs';
-const AI_JOB_BATCH_SIZE_=5;
+const AI_JOB_BATCH_SIZE_=2; // Keep individual Drive operations small even for dense Health exports.
 const AI_JOB_TYPES_=['health','fitness','strength','nutrition'];
 
 function readAiJob_(){
@@ -136,14 +136,23 @@ function collectAiJobBatch_(job){
         records.push({file_id:f.getId(),name:f.getName(),size_bytes:raw.length,
           modified_at:formatIso_(f.getLastUpdated()),timestamp:stamp.getTime(),data:data});
       }
-    }catch(e){console.error(JSON.stringify({event:'ai_collect_skip',job_id:job.job_id,type:type,file: candidate.name,error:String(e.message||e).slice(0,120)}));}
+    }catch(e){
+      const reason=String(e&&e.message||e);
+      if(/(?:서비스 오류|Service error|Drive|rate limit|invoked too many times|Internal error)/i.test(reason))throw e;
+      console.error(JSON.stringify({event:'ai_collect_skip',job_id:job.job_id,type:type,file:candidate.name,error:reason.slice(0,120)}));
+    }
   }
   if(records.length){
-    const part=folder.createFile('part-'+type+'-'+job.cursor+'.json',JSON.stringify(records),MimeType.PLAIN_TEXT);
+    const partName='part-'+type+'-'+job.cursor+'.json.gz';
+    const compressed=Utilities.gzip(Utilities.newBlob(JSON.stringify(records),'application/json',partName.replace(/\\.gz$/,'')));
+    compressed.setName(partName);
+    const part=folder.createFile(compressed);
+    console.log(JSON.stringify({event:'ai_part_saved',job_id:job.job_id,type:type,records:records.length,compressed_bytes:part.getSize()}));
     job.parts[type].push(part.getId());
     job.counts[type]+=records.length;
   }
   job.cursor=until;
+  job.error_code=null;job.stage_error_attempts=0;job.message=null;
   job.progress={step:job.stage,done:until,total:candidates.length};
   console.log(JSON.stringify({event:'ai_collect_batch',job_id:job.job_id,type:type,cursor:until,total:candidates.length,accepted:records.length,elapsed_ms:Date.now()-started}));
   if(until>=candidates.length)aiJobAdvance_(job);
@@ -152,7 +161,10 @@ function collectAiJobBatch_(job){
 function readAiJobParts_(job,type){
   const all=[];
   (job.parts[type]||[]).forEach(id=>{
-    const part=JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8'));
+    const file=DriveApp.getFileById(id);
+    const blob=file.getBlob();
+    const raw=/\\.gz$/i.test(file.getName())?Utilities.ungzip(blob).getDataAsString('UTF-8'):blob.getDataAsString('UTF-8');
+    const part=JSON.parse(raw);
     Array.prototype.push.apply(all,part);
   });
   return dedupeCollectedFiles_(all);
@@ -239,11 +251,24 @@ function stepAiJob_(jobId){
       else if(stage==='openai_inflight')return publicAiJob_(job);
       else throw new Error('UNKNOWN_STAGE: '+stage);
     }catch(e){
-      job.status='failed';job.error_code=stage==='openai'||stage==='openai_inflight'?'AI_STAGE_FAILED':'JOB_STAGE_FAILED';
-      job.message=String(e&&e.message||e).slice(0,220);
-      writeAiJob_(job);
-      console.error(JSON.stringify({event:'ai_job_failed',job_id:job.job_id,stage:stage,error_code:job.error_code,message:job.message}));
+      const message=String(e&&e.message||e).slice(0,220);
+      const retryable=stage!=='openai'&&stage!=='openai_inflight'&&
+        /(?:서비스 오류|Service error|Drive|rate limit|invoked too many times|Internal error)/i.test(message);
+      job.stage_error_attempts=(job.stage_error_attempts||0)+1;
+      if(retryable&&job.stage_error_attempts<=3){
+        job.message='Drive 연결 오류로 현재 단계를 다시 시도합니다 ('+job.stage_error_attempts+'/3).';
+        job.error_code='DRIVE_RETRY';
+        writeAiJob_(job);
+        console.warn(JSON.stringify({event:'ai_job_retry',job_id:job.job_id,stage:stage,attempt:job.stage_error_attempts,error:message}));
+      }else{
+        job.status='failed';job.error_code=stage==='openai'||stage==='openai_inflight'?'AI_STAGE_FAILED':'JOB_STAGE_FAILED';
+        job.message=message;
+        writeAiJob_(job);
+        console.error(JSON.stringify({event:'ai_job_failed',job_id:job.job_id,stage:stage,error_code:job.error_code,message:job.message}));
+      }
     }
+    if(job.status==='running'&&!job.error_code)job.stage_error_attempts=0;
+    if(job.status==='running'&&job.error_code!=='DRIVE_RETRY'){job.stage_error_attempts=0;job.message=null;writeAiJob_(job);}
     console.log(JSON.stringify({event:'ai_job_step',job_id:job.job_id,stage:stage,elapsed_ms:Date.now()-started}));
     return publicAiJob_(job);
   }finally{lock.releaseLock();}
