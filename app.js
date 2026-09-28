@@ -456,8 +456,14 @@ $("exportAllBtn").onclick=()=>downloadJSON({schema_version:1,exported_at:isoLoca
 $("settingsBtn").onclick=()=>{$("gasUrl").value=getGasUrl();$("settingsDialog").showModal();};
 $("saveSettingsBtn").onclick=()=>{
   const value=$("gasUrl").value.trim();
+  const oldUrl=getGasUrl();
   if(value && value!==DEFAULT_GAS_URL) localStorage.setItem("gasUrl",value);
   else localStorage.removeItem("gasUrl");
+  if(oldUrl!==getGasUrl()) {
+    // Tokens belong to the Apps Script deployment that issued them.
+    window.workoutAuth?.clearAuth();
+    window.workoutAuth?.showLogin('서버 URL이 변경되었습니다. 변경된 서버에서 다시 인증하세요.');
+  }
   updateSyncStatus();
   toast("설정을 저장했습니다.");
 };
@@ -470,7 +476,8 @@ $("workoutDate").max=localDateValue();
 $("workoutDate").addEventListener("change",()=>{ updateWorkoutDateUi(); if(state.current.length){ const stamp=isoForWorkoutDate(); state.current=state.current.map(ex=>({...ex,recorded_at:stamp})); } });
 updateWorkoutDateUi();
 updateFields();renderCurrent();renderHistory();renderExerciseOptions();updateSyncStatus();
-loadDriveSessions(false).finally(()=>retryPendingSync());
+// Authenticated data is loaded by auth-client.js after auth_check succeeds.
+// Do not start unauthenticated requests while the login gate is still open.
 
 if ("serviceWorker" in navigator) {
   let reloadingForUpdate = false;
@@ -689,4 +696,4 @@ $("runAnalysisBtn").onclick=()=>{resetAnalysisDialog();$("analysisDialog").showM
 $("confirmAnalysisBtn").onclick=(e)=>{e.preventDefault();$("analysisDialog").close();executeAiAnalysis();};
 $("refreshAnalysisBtn").onclick=()=>loadLatestAnalysis(true);
 $("analysisFromDate").onchange=()=>{analysisState.fromDateTouched=true;};
-loadLatestAnalysis(false);
+// auth-client.js loads the latest analysis after successful authentication.
