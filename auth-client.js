@@ -58,6 +58,11 @@
     if (!tasks.length) return;
     await Promise.allSettled(tasks);
 
+    // Resume an existing server-side AI job after a verified login; do not create a second job.
+    if (typeof resumeAiAnalysisIfPending === 'function') {
+      Promise.resolve(resumeAiAnalysisIfPending()).catch(e => console.warn('AI 작업 재개 실패:', e));
+    }
+
     try {
       if (typeof updateSyncStatus === 'function') updateSyncStatus();
     } catch (_) {}
