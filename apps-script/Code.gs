@@ -28,6 +28,9 @@ function jsonResponse(data) {
 }
 
 function doPost(e) {
+  const requestId=Utilities.getUuid().slice(0,8);
+  const requestStarted=Date.now();
+  let requestAction='unknown';
   try {
     if (!e || !e.postData || !e.postData.contents) {
       throw new Error('전송된 데이터가 없습니다.');
@@ -35,13 +38,17 @@ function doPost(e) {
 
     const data = JSON.parse(e.postData.contents);
     const action = String(data && data.action || '');
+    requestAction=action||'save_strength';
 
     if (action === 'login') {
       return jsonResponse(login_(String(data.password || '')));
     }
 
     const auth = verifyAuthToken_(data && data.auth_token);
-    if (!auth.ok) return jsonResponse(auth);
+    if (!auth.ok){
+      console.warn(JSON.stringify({event:'auth_denied',request_id:requestId,action:requestAction,reason:auth.error_code}));
+      return jsonResponse(auth);
+    }
 
     if (action === 'auth_check') {
       return jsonResponse({
@@ -58,6 +65,13 @@ function doPost(e) {
     if (action === 'latest_analysis') {
       return jsonResponse(getLatestAnalysisResponse_());
     }
+
+    // Chunked client-driven job: avoids six-minute synchronous doPost execution.
+    if (action === 'analyze_start') {
+      return jsonResponse(startAiJob_(data.additional_request||'',data.force===true,data.analysis_from||'',data.analysis_from_manual===true));
+    }
+    if (action === 'analysis_status') return jsonResponse(listAiJobStatus_(data.job_id||''));
+    if (action === 'analysis_step') return jsonResponse(stepAiJob_(data.job_id||''));
 
     if (action === 'analyze') {
       const limit = consumeAnalysisQuota_();
@@ -89,9 +103,11 @@ function doPost(e) {
     });
 
   } catch (error) {
+    console.error(JSON.stringify({event:'post_error',request_id:requestId,action:requestAction,elapsed_ms:Date.now()-requestStarted,error:String(error&&error.message||error).slice(0,180)}));
     return jsonResponse({
       ok: false,
       error_code: 'SERVER_ERROR',
+      request_id:requestId,
       error: String(error && error.message ? error.message : error)
     });
   }
