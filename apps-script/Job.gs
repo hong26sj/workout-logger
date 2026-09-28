@@ -144,7 +144,7 @@ function collectAiJobBatch_(job){
   }
   if(records.length){
     const partName='part-'+type+'-'+job.cursor+'.json.gz';
-    const compressed=Utilities.gzip(Utilities.newBlob(JSON.stringify(records),'application/json',partName.replace(/\\.gz$/,'')));
+    const compressed=Utilities.gzip(Utilities.newBlob(JSON.stringify(records),'application/json',partName.slice(0,-3)));
     compressed.setName(partName);
     const part=folder.createFile(compressed);
     console.log(JSON.stringify({event:'ai_part_saved',job_id:job.job_id,type:type,records:records.length,compressed_bytes:part.getSize()}));
@@ -163,7 +163,7 @@ function readAiJobParts_(job,type){
   (job.parts[type]||[]).forEach(id=>{
     const file=DriveApp.getFileById(id);
     const blob=file.getBlob();
-    const raw=/\\.gz$/i.test(file.getName())?Utilities.ungzip(blob).getDataAsString('UTF-8'):blob.getDataAsString('UTF-8');
+    const raw=file.getName().endsWith('.gz')?Utilities.ungzip(blob).getDataAsString('UTF-8'):blob.getDataAsString('UTF-8');
     const part=JSON.parse(raw);
     Array.prototype.push.apply(all,part);
   });
