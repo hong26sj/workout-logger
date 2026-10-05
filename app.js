@@ -467,9 +467,41 @@ $("saveSettingsBtn").onclick=()=>{
   updateSyncStatus();
   toast("설정을 저장했습니다.");
 };
+async function rebuildDriveStrengthIndex(){
+  const url=getGasUrl();
+  if(!url) return false;
+
+  const status=$("syncStatus");
+  status.className="sync-status status-loading";
+  status.textContent="Google Drive 원본 기록과 인덱스를 동기화하는 중...";
+
+  try{
+    const response=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({action:"rebuild_strength_index"}),
+      redirect:"follow"
+    });
+    if(!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const result=await response.json();
+    if(!result.ok) throw new Error(result.error||"인덱스 재생성 실패");
+
+    const loaded=await loadDriveSessions(false);
+    if(!loaded) throw new Error("갱신된 Drive 기록 조회 실패");
+    toast(`Drive 원본 기준으로 인덱스를 갱신했습니다. ${result.count||0}건`);
+    return true;
+  }catch(error){
+    status.className="sync-status status-warn";
+    status.textContent="Drive 인덱스를 갱신하지 못했습니다.";
+    toast(`Drive 새로고침 실패: ${error.message}`);
+    return false;
+  }
+}
+
 const refreshDriveBtn = $("refreshDriveBtn");
 if (refreshDriveBtn) {
-  refreshDriveBtn.onclick = () => loadDriveSessions(true);
+  refreshDriveBtn.onclick = () => rebuildDriveStrengthIndex();
 }
 $("workoutDate").value=localDateValue();
 $("workoutDate").max=localDateValue();
