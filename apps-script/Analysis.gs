@@ -294,13 +294,28 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,nutritionFiles,
     const values=series.filter(v=>v.t>=startMs&&v.t<=endMs).map(v=>Number(v.qty)).filter(v=>isFinite(v));
     return values.length?round_(avg_(values),1):null;
   };
+  // Current automatic HRR zones from the user's heart-rate-zone screen.
+  // Keep the boundaries in the analysis payload so AI can interpret strength-session
+  // cardiovascular strain without treating zones as strength-performance targets.
+  const heartRateZoneConfig={
+    method:'heart_rate_reserve',
+    resting_hr_bpm:71,
+    max_hr_bpm:181,
+    zone1:{min:null,max:136},
+    zone2:{min:137,max:147},
+    zone3:{min:148,max:158},
+    zone4:{min:159,max:169},
+    zone5:{min:170,max:null},
+    captured_at:'2026-10-05',
+    source:'user_heart_rate_zone_settings'
+  };
   const zoneForHr=(hr)=>{
     if(!isFinite(Number(hr)))return null;
     const n=Number(hr);
-    if(n<137)return 'zone1';
-    if(n<=147)return 'zone2';
-    if(n<=158)return 'zone3';
-    if(n<=169)return 'zone4';
+    if(n<heartRateZoneConfig.zone2.min)return 'zone1';
+    if(n<=heartRateZoneConfig.zone2.max)return 'zone2';
+    if(n<=heartRateZoneConfig.zone3.max)return 'zone3';
+    if(n<=heartRateZoneConfig.zone4.max)return 'zone4';
     return 'zone5';
   };
   const buildHeartRateZones=(hrSeries,startMs,endMs)=>{
@@ -444,7 +459,21 @@ function buildStatistics_(healthFiles,fitnessFiles,strengthFiles,nutritionFiles,
       has_gps_route:!!gpsRouteSignature,
       route_signature:gpsRouteSignature,
       is_walk_run:isWalkRun,
-      cardio_quality_detail:cardioQuality
+      cardio_quality_detail:cardioQuality,
+      heart_rate_detail:(()=>{
+        const hrSeries=workoutSeries(w,['heartRateData','heart_rate_data','heartRate']);
+        const startMs=start.getTime();
+        const endMs=startMs+Number(durationMin||0)*60000;
+        const values=hrSeries.filter(v=>v.t>=startMs&&v.t<=endMs).map(v=>Number(v.qty)).filter(v=>isFinite(v));
+        return {
+          sample_count:values.length,
+          avg_hr_bpm:values.length?round_(avg_(values),1):null,
+          max_hr_bpm:values.length?round_(Math.max.apply(null,values),0):null,
+          zones:buildHeartRateZones(hrSeries,startMs,endMs),
+          zone_config:heartRateZoneConfig,
+          granularity:'minute_level_estimate'
+        };
+      })()
     });
   }));
   workouts.forEach(w=>{
@@ -507,6 +536,39 @@ const cardioWorkouts=workouts.filter(w=>w.is_walk_run&&!w.cardio_exclusion_reaso
       pace_min_per_km:w.pace_min_per_km,
       reason:w.cardio_exclusion_reason
     }));
+
+  const isStrengthFitnessWorkout_=(w)=>{
+    const name=String(w&&((w.original_name||w.name))||'');
+    return /근력|웨이트|strength|weight\s*training|functional\s*strength|traditional\s*strength/i.test(name);
+  };
+  const strengthFitnessWorkouts=workouts.filter(isStrengthFitnessWorkout_);
+  const strengthHrSessions=strengthFitnessWorkouts.map(w=>({
+    name:w.name,
+    original_name:w.original_name,
+    start:w.start,
+    duration_min:w.duration_min,
+    active_kcal:w.active_kcal,
+    avg_hr_bpm:w.heart_rate_detail&&w.heart_rate_detail.avg_hr_bpm!==null?w.heart_rate_detail.avg_hr_bpm:w.avg_hr,
+    max_hr_bpm:w.heart_rate_detail&&w.heart_rate_detail.max_hr_bpm!==null?w.heart_rate_detail.max_hr_bpm:w.max_hr,
+    heart_rate_zones:w.heart_rate_detail&&w.heart_rate_detail.zones||null,
+    heart_rate_samples:w.heart_rate_detail&&w.heart_rate_detail.sample_count||0,
+    zone_config:heartRateZoneConfig
+  }));
+  const strengthHrMinutes=round_(sum_(strengthHrSessions.map(s=>s.duration_min||0)),1);
+  const strengthHrWeighted=strengthHrSessions.filter(s=>s.avg_hr_bpm!==null&&s.avg_hr_bpm!==undefined)
+    .reduce((sum,s)=>sum+Number(s.avg_hr_bpm)*Number(s.duration_min||0),0);
+  const strengthZoneTotals={zone1_seconds:0,zone2_seconds:0,zone3_seconds:0,zone4_seconds:0,zone5_seconds:0};
+  strengthHrSessions.forEach(s=>Object.keys(strengthZoneTotals).forEach(k=>strengthZoneTotals[k]+=Number(s.heart_rate_zones&&s.heart_rate_zones[k]||0)));
+  Object.keys(strengthZoneTotals).forEach(k=>strengthZoneTotals[k]=round_(strengthZoneTotals[k],0));
+  const strengthHeartRateSummary={
+    session_count:strengthHrSessions.length,
+    total_minutes:strengthHrMinutes,
+    avg_hr_bpm:strengthHrMinutes&&strengthHrWeighted?round_(strengthHrWeighted/strengthHrMinutes,1):null,
+    max_hr_bpm:strengthHrSessions.length?Math.max.apply(null,strengthHrSessions.map(s=>Number(s.max_hr_bpm||0))):null,
+    zone_totals:strengthZoneTotals,
+    zone_config:heartRateZoneConfig,
+    interpretation:'Heart-rate zones are a cardiovascular-load supplement for strength training; sets, reps, load, RPE and pain remain primary strength-performance signals.'
+  };
 
   const strengthSessions=[];
   const strengthSeen={};
@@ -634,7 +696,7 @@ const cardioWorkouts=workouts.filter(w=>w.is_walk_run&&!w.cardio_exclusion_reaso
     activity:{steps_total:round_(sumMetric('step_count'),0),steps_daily_average:round_(avg_(dailySums('step_count')),0),distance_total_km:sumMetric('walking_running_distance'),active_energy_total_kcal:round_(sumMetric('active_energy')/4.184,1),basal_energy_total_kcal:round_(sumMetric('basal_energy_burned')/4.184,1),exercise_minutes_total:sumMetric('apple_exercise_time'),stand_minutes_total:sumMetric('apple_stand_time'),daily_activity_series:dailyActivitySeries,physical_effort:physicalEffortPeriod,cardio_summary:cardioSummary,cardio_sessions:recentCardioWorkouts},
     heart_rate:{resting_hr_average:round_(avg_(dailyAvgs('resting_heart_rate')),1),resting_hr_latest:latestMetric('resting_heart_rate'),walking_hr_average:round_(avg_(dailyAvgs('walking_heart_rate_average')),1),heart_rate_average:recoveryStats.heart_rate&&recoveryStats.heart_rate.avg_7d_bpm||null,oxygen_saturation_latest:recoveryStats.blood_oxygen&&recoveryStats.blood_oxygen.latest_pct||null},
     fitness:{session_count:workouts.length,total_minutes:round_(workouts.reduce((s,w)=>s+w.duration_min,0),1),active_kcal:round_(workouts.reduce((s,w)=>s+w.active_kcal,0),1),cardio_sessions:recentCardioWorkouts,sessions:workouts.slice(-50)},
-    strength:{session_count:strengthSessions.length,total_sets:totalSets,total_reps:totalReps,total_volume_kg:round_(totalVolume,1),timed_seconds:totalTimedSeconds,by_exercise:byExercise,daily_sessions:strengthDailySessions.slice(-60)},
+    strength:{session_count:strengthSessions.length,total_sets:totalSets,total_reps:totalReps,total_volume_kg:round_(totalVolume,1),timed_seconds:totalTimedSeconds,by_exercise:byExercise,daily_sessions:strengthDailySessions.slice(-60),heart_rate_summary:strengthHeartRateSummary,heart_rate_sessions:strengthHrSessions.slice(-60)},
     pain:{event_count:pain.length,max_level:pain.length?Math.max.apply(null,pain.map(x=>x.level)):0,events:pain.slice(-30)},
     recovery:recoveryStats,
     nutrition:nutritionStats,
