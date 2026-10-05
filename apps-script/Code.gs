@@ -62,6 +62,18 @@ function doPost(e) {
       return jsonResponse(listStrengthSessions_());
     }
 
+    // 사용자가 Drive에 직접 추가한 strength-*.json까지 원본 기준으로 다시 색인합니다.
+    // 일반 list는 빠른 인덱스 조회를 유지하고, 사용자가 명시적으로 Drive 새로고침을
+    // 실행했을 때만 전체 스캔이 발생하도록 별도 action으로 분리합니다.
+    if (action === 'rebuild_strength_index') {
+      const index = rebuildStrengthIndex_();
+      return jsonResponse({
+        ok: true,
+        count: Number(index && index.session_count || 0),
+        index_updated_at: index && index.updated_at || null
+      });
+    }
+
     if (action === 'latest_analysis') {
       return jsonResponse(getLatestAnalysisResponse_());
     }
