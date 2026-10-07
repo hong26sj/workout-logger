@@ -795,7 +795,14 @@ async function executeAiAnalysis(){
   try{
     const response=await window.workoutAuth.post(payload);
     if(!response.ok)throw new Error(response.error||response.error_code||'작업 생성 실패');
-    await driveAiJob_(response.job);
+    let initialJob=response.job;
+    // Advance once explicitly; this also revives an existing job that was created but never stepped.
+    if(initialJob&&initialJob.status==='running'&&initialJob.stage!=='openai_inflight'){
+      const firstStep=await window.workoutAuth.post({action:'analysis_step',job_id:initialJob.job_id});
+      if(!firstStep.ok&&firstStep.error_code!=='JOB_BUSY')throw new Error(firstStep.error||firstStep.error_code||'첫 분석 단계 실패');
+      if(firstStep.ok&&firstStep.job)initialJob=firstStep.job;
+    }
+    await driveAiJob_(initialJob);
   }catch(error){
     $("analysisStatus").className='sync-status status-warn';
     $("analysisStatus").textContent='AI 분석 시작 실패: '+error.message;
