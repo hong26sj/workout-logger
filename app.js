@@ -766,7 +766,14 @@ async function driveAiJob_(initialJob){
           if(response.error_code==='JOB_BUSY'){await aiJobSleep(2500);continue;}
           throw new Error(response.error||response.error_code||'분석 단계 실패');
         }
-        job=response.job;transientFailures=0;
+        if(response.job&&response.job.job_id){
+          job=response.job;
+        }else{
+          const recovered=await window.workoutAuth.post({action:'analysis_status',job_id:job.job_id});
+          if(!recovered.ok||!recovered.job||!recovered.job.job_id)throw new Error(recovered.error||recovered.error_code||'분석 상태 복구 실패');
+          job=recovered.job;
+        }
+        transientFailures=0;
       }catch(error){
         transientFailures++;
         if(transientFailures>3)throw new Error('네트워크 연결이 끊겼습니다. 작업을 새로 만들지 말고 재접속 후 이어서 진행하세요. '+error.message);
@@ -800,7 +807,18 @@ async function executeAiAnalysis(){
     if(initialJob&&initialJob.status==='running'&&initialJob.stage!=='openai_inflight'){
       const firstStep=await window.workoutAuth.post({action:'analysis_step',job_id:initialJob.job_id});
       if(!firstStep.ok&&firstStep.error_code!=='JOB_BUSY')throw new Error(firstStep.error||firstStep.error_code||'첫 분석 단계 실패');
-      if(firstStep.ok&&firstStep.job)initialJob=firstStep.job;
+      if(firstStep.ok&&firstStep.job&&firstStep.job.job_id){
+        initialJob=firstStep.job;
+      }else{
+        const recovered=await window.workoutAuth.post({action:'analysis_status',job_id:initialJob.job_id});
+        if(!recovered.ok||!recovered.job||!recovered.job.job_id)throw new Error(recovered.error||recovered.error_code||'분석 상태 복구 실패');
+        initialJob=recovered.job;
+      }
+    }
+    if(!initialJob||!initialJob.job_id){
+      const recovered=await window.workoutAuth.post({action:'analysis_status'});
+      if(!recovered.ok||!recovered.job||!recovered.job.job_id)throw new Error(recovered.error||recovered.error_code||'서버 작업 상태를 복구하지 못했습니다.');
+      initialJob=recovered.job;
     }
     await driveAiJob_(initialJob);
   }catch(error){
