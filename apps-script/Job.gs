@@ -57,7 +57,9 @@ function startAiJob_(additionalRequest,force,analysisFromInput,analysisFromManua
       manifest_id:null,cursor:0,progress:{step:'collect_health',done:0,total:null}
     };
     writeAiJob_(job);
-    console.log(JSON.stringify({event:'ai_job_started',job_id:id,period_from:job.period_from}));
+    // Prime the first collection step before returning so a suspended client cannot leave an empty job.
+    collectAiJobBatch_(job);
+    console.log(JSON.stringify({event:'ai_job_started',job_id:id,period_from:job.period_from,stage:job.stage}));
     return publicAiJob_(job);
   }finally{lock.releaseLock();}
 }
