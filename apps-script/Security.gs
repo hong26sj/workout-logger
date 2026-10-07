@@ -1,70 +1,80 @@
 /** Workout Logger - authentication, token, and AI quota controls. */
 
 function login_(password) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(5000);
+  const props = PropertiesService.getScriptProperties();
+  const configuredPassword = String(props.getProperty('APP_PASSWORD') || '').trim();
 
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const configuredPassword = String(props.getProperty('APP_PASSWORD') || '').trim();
+  if (!/^\d{6,12}$/.test(configuredPassword)) {
+    return {
+      ok: false,
+      error_code: 'AUTH_NOT_CONFIGURED',
+      error: 'APP_PASSWORD가 설정되지 않았거나 숫자 6~12자리 형식이 아닙니다.'
+    };
+  }
 
-    if (!/^\d{6,12}$/.test(configuredPassword)) {
-      return {
-        ok: false,
-        error_code: 'AUTH_NOT_CONFIGURED',
-        error: 'APP_PASSWORD가 설정되지 않았거나 숫자 6~12자리 형식이 아닙니다.'
-      };
-    }
+  const now = Date.now();
+  const lockedUntil = Number(props.getProperty('AUTH_LOCKED_UNTIL') || 0);
+  if (lockedUntil > now) {
+    return {
+      ok: false,
+      error_code: 'LOGIN_LOCKED',
+      error: '로그인 시도가 잠겨 있습니다.',
+      retry_after_seconds: Math.ceil((lockedUntil - now) / 1000)
+    };
+  }
 
-    const now = Date.now();
-    const lockedUntil = Number(props.getProperty('AUTH_LOCKED_UNTIL') || 0);
-
-    if (lockedUntil > now) {
-      return {
-        ok: false,
-        error_code: 'LOGIN_LOCKED',
-        error: '로그인 시도가 잠겨 있습니다.',
-        retry_after_seconds: Math.ceil((lockedUntil - now) / 1000)
-      };
-    }
-
-    if (!constantTimeEqual_(password, configuredPassword)) {
-      const failures = Number(props.getProperty('AUTH_FAILURE_COUNT') || 0) + 1;
-
-      if (failures >= LOGIN_MAX_FAILURES_) {
-        props.setProperties({
-          AUTH_FAILURE_COUNT: '0',
-          AUTH_LOCKED_UNTIL: String(now + LOGIN_LOCK_SECONDS_ * 1000)
-        }, false);
-
-        return {
-          ok: false,
-          error_code: 'LOGIN_LOCKED',
-          error: '비밀번호를 5회 잘못 입력하여 10분 동안 로그인이 잠겼습니다.',
-          retry_after_seconds: LOGIN_LOCK_SECONDS_
-        };
-      }
-
-      props.setProperty('AUTH_FAILURE_COUNT', String(failures));
-
-      return {
-        ok: false,
-        error_code: 'INVALID_PASSWORD',
-        error: '비밀번호가 올바르지 않습니다.',
-        remaining_attempts: LOGIN_MAX_FAILURES_ - failures
-      };
-    }
-
+  // Successful authentication must not wait for the long-running AI job ScriptLock.
+  // Token keys are unique, so issuing a token is safe without the global job lock.
+  if (constantTimeEqual_(password, configuredPassword)) {
     props.deleteProperty('AUTH_FAILURE_COUNT');
     props.deleteProperty('AUTH_LOCKED_UNTIL');
-
     const token = createAuthToken_();
     return {
       ok: true,
       auth_token: token.token,
       expires_at: new Date(token.expiresAt).toISOString()
     };
+  }
 
+  // Serialize only failed-attempt accounting.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    return {
+      ok: false,
+      error_code: 'AUTH_BUSY',
+      error: '서버가 분석 작업을 처리 중입니다. 잠시 후 다시 인증하세요.'
+    };
+  }
+  try {
+    const latestLockedUntil = Number(props.getProperty('AUTH_LOCKED_UNTIL') || 0);
+    if (latestLockedUntil > Date.now()) {
+      return {
+        ok: false,
+        error_code: 'LOGIN_LOCKED',
+        error: '로그인 시도가 잠겨 있습니다.',
+        retry_after_seconds: Math.ceil((latestLockedUntil - Date.now()) / 1000)
+      };
+    }
+    const failures = Number(props.getProperty('AUTH_FAILURE_COUNT') || 0) + 1;
+    if (failures >= LOGIN_MAX_FAILURES_) {
+      props.setProperties({
+        AUTH_FAILURE_COUNT: '0',
+        AUTH_LOCKED_UNTIL: String(Date.now() + LOGIN_LOCK_SECONDS_ * 1000)
+      }, false);
+      return {
+        ok: false,
+        error_code: 'LOGIN_LOCKED',
+        error: '비밀번호를 5회 잘못 입력하여 10분 동안 로그인이 잠겼습니다.',
+        retry_after_seconds: LOGIN_LOCK_SECONDS_
+      };
+    }
+    props.setProperty('AUTH_FAILURE_COUNT', String(failures));
+    return {
+      ok: false,
+      error_code: 'INVALID_PASSWORD',
+      error: '비밀번호가 올바르지 않습니다.',
+      remaining_attempts: LOGIN_MAX_FAILURES_ - failures
+    };
   } finally {
     lock.releaseLock();
   }
