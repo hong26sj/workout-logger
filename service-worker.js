@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'workout-logger-ai-v29-drive-retry';
+const CACHE_VERSION = 'workout-logger-ai-v30-job-start-fix';
 const APP_SHELL = [
   './',
   './index.html',
