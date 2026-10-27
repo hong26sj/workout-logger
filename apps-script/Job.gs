@@ -3,6 +3,8 @@ const AI_JOB_PROPERTY_='WL_ACTIVE_AI_JOB_V1';
 const AI_JOB_FOLDER_='AnalysisJobs';
 const AI_JOB_BATCH_SIZE_=2; // Keep individual Drive operations small even for dense Health exports.
 const AI_JOB_TYPES_=['health','fitness','strength','nutrition'];
+const AI_JOB_DATA_VERSION_=2;
+const AI_JOB_STALE_MS_=30*60*1000;
 
 function readAiJob_(){
   const raw=PropertiesService.getScriptProperties().getProperty(AI_JOB_PROPERTY_);
@@ -23,14 +25,27 @@ function publicAiJob_(job){
 }
 function startAiJob_(additionalRequest,force,analysisFromInput,analysisFromManual){
   const existing=readAiJob_();
-  if(existing&&existing.status==='running')return publicAiJob_(existing);
+  if(existing&&existing.status==='running'){
+    const age=Date.now()-parseDate_(existing.updated_at||existing.started_at).getTime();
+    if(isFinite(age)&&age<AI_JOB_STALE_MS_)return publicAiJob_(existing);
+    existing.status='failed';existing.stage='failed';existing.error_code='JOB_STALE';
+    existing.message='30분 이상 진행되지 않은 이전 분석 작업을 종료했습니다.';
+    writeAiJob_(existing);
+    console.warn(JSON.stringify({event:'ai_job_stale_closed',job_id:existing.job_id,age_ms:age}));
+  }
   const quota=consumeAnalysisQuota_(); // Policy: accepted attempts count even if later processing fails.
   if(!quota.ok)return quota;
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(5000))return {ok:false,error_code:'JOB_BUSY',error:'분석 작업 준비 중입니다.'};
   try{
     const active=readAiJob_();
-    if(active&&active.status==='running')return publicAiJob_(active);
+    if(active&&active.status==='running'){
+      const age=Date.now()-parseDate_(active.updated_at||active.started_at).getTime();
+      if(isFinite(age)&&age<AI_JOB_STALE_MS_)return publicAiJob_(active);
+      active.status='failed';active.stage='failed';active.error_code='JOB_STALE';
+      active.message='30분 이상 진행되지 않은 이전 분석 작업을 종료했습니다.';
+      writeAiJob_(active);
+    }
     const now=new Date(),latest=findLatestAnalysis_();
     const recent=startOfDay_(addDays_(now,-6));
     const previous=latest?parseDate_(latest.period&&latest.period.to||latest.created_at):recent;
@@ -44,7 +59,7 @@ function startAiJob_(additionalRequest,force,analysisFromInput,analysisFromManua
     const root=DriveApp.getFolderById(STRENGTH_FOLDER_ID);
     const folder=getOrCreateFolder_(root,AI_JOB_FOLDER_).createFolder('job-'+id);
     const job={
-      job_id:id,folder_id:folder.getId(),status:'running',stage:'collect_health',
+      job_id:id,folder_id:folder.getId(),data_version:AI_JOB_DATA_VERSION_,status:'running',stage:'collect_health',
       started_at:formatIso_(now),updated_at:formatIso_(now),analysis_id:null,
       period_from:formatIso_(periodFrom),period_to:formatIso_(now),
       analysis_from:formatIso_(analysisFrom),requested_from:String(analysisFromInput||'').trim(),
@@ -66,6 +81,15 @@ function startAiJob_(additionalRequest,force,analysisFromInput,analysisFromManua
 function listAiJobStatus_(id){
   const job=readAiJob_();
   if(!job||id&&job.job_id!==String(id))return {ok:false,error_code:'JOB_NOT_FOUND',error:'분석 작업을 찾지 못했습니다.'};
+  if(job.status==='running'&&job.stage!=='openai_inflight'){
+    const age=Date.now()-parseDate_(job.updated_at||job.started_at).getTime();
+    if(isFinite(age)&&age>=AI_JOB_STALE_MS_){
+      job.status='failed';job.stage='failed';job.error_code='JOB_STALE';
+      job.message='30분 이상 진행되지 않아 작업을 종료했습니다. 새 분석을 시작하세요.';
+      writeAiJob_(job);
+      return publicAiJob_(job);
+    }
+  }
   if(job.status==='running'&&job.stage==='openai_inflight'&&Date.now()-parseDate_(job.updated_at).getTime()>7*60*1000){
     // After a killed execution the API response might already have been charged.
     // Reuse a completed result if persisted; otherwise require an explicit new job.
@@ -122,20 +146,56 @@ const AI_HEALTH_METRICS_={
 function compactAiHealthData_(source,from,to){
   if(!source||!source.data||!Array.isArray(source.data.metrics))return source;
   const min=from.getTime(),max=to.getTime();
+  const dailySum={active_energy:true,apple_exercise_time:true,apple_stand_time:true,
+    basal_energy_burned:true,step_count:true,walking_running_distance:true};
+  const dailyAvg={blood_oxygen_saturation:true,body_fat_percentage:true,body_mass_index:true,
+    heart_rate_variability:true,lean_body_mass:true,respiratory_rate:true,resting_heart_rate:true,
+    vo2_max:true,waist_circumference:true,walking_heart_rate_average:true,weight_body_mass:true};
+  const dayKey=t=>Utilities.formatDate(new Date(t),TIME_ZONE,'yyyy-MM-dd');
   const metrics=source.data.metrics.filter(m=>AI_HEALTH_METRICS_[m.name]).map(m=>{
-    const values=(m.data||[]).filter(v=>{
-      const date=parseDate_(v.date).getTime();
-      return isFinite(date)&&date>=min&&date<=max;
-    }).map(v=>{
-      if(m.name==='heart_rate')
-        return {date:v.date,Avg:v.Avg,Min:v.Min,Max:v.Max};
-      if(m.name==='sleep_analysis')
-        return {date:v.date,sleepStart:v.sleepStart,inBedStart:v.inBedStart,
-          sleepEnd:v.sleepEnd,inBedEnd:v.inBedEnd,totalSleep:v.totalSleep,
-          deep:v.deep,core:v.core,rem:v.rem,awake:v.awake,inBed:v.inBed,source:v.source};
-      return {date:v.date,qty:v.qty};
+    const name=m.name,values=(m.data||[]).filter(v=>{
+      const t=parseDate_(v.date).getTime();
+      return isFinite(t)&&t>=min&&t<=max;
     });
-    return {name:m.name,units:m.units,data:values};
+    if(dailySum[name]||dailyAvg[name]){
+      const buckets={};
+      values.forEach(v=>{
+        const t=parseDate_(v.date).getTime(),qty=Number(v.qty);
+        if(!isFinite(qty))return;
+        const key=dayKey(t);
+        if(!buckets[key])buckets[key]={sum:0,count:0};
+        buckets[key].sum+=qty;buckets[key].count++;
+      });
+      return {name:name,units:m.units,data:Object.keys(buckets).sort().map(key=>({
+        date:key+' 12:00:00 +0900',
+        qty:dailySum[name]?buckets[key].sum:buckets[key].sum/buckets[key].count
+      }))};
+    }
+    if(name==='heart_rate'){
+      const buckets={};
+      values.forEach(v=>{
+        const t=parseDate_(v.date).getTime();
+        if(!isFinite(t))return;
+        const bucket=Math.floor(t/300000)*300000,key=String(bucket);
+        const avg=isFinite(Number(v.Avg))?Number(v.Avg):null;
+        const lo=isFinite(Number(v.Min))?Number(v.Min):avg;
+        const hi=isFinite(Number(v.Max))?Number(v.Max):avg;
+        if(avg===null)return;
+        if(!buckets[key])buckets[key]={sum:0,count:0,min:lo,max:hi};
+        const x=buckets[key];x.sum+=avg;x.count++;x.min=Math.min(x.min,lo);x.max=Math.max(x.max,hi);
+      });
+      return {name:name,units:m.units,data:Object.keys(buckets).sort((x,y)=>Number(x)-Number(y)).map(key=>{
+        const x=buckets[key];
+        return {date:formatIso_(new Date(Number(key))),Avg:x.sum/x.count,Min:x.min,Max:x.max};
+      })};
+    }
+    if(name==='sleep_analysis'){
+      return {name:name,units:m.units,data:values.map(v=>({date:v.date,sleepStart:v.sleepStart,inBedStart:v.inBedStart,
+        sleepEnd:v.sleepEnd,inBedEnd:v.inBedEnd,totalSleep:v.totalSleep,deep:v.deep,core:v.core,
+        rem:v.rem,awake:v.awake,inBed:v.inBed,source:v.source}))};
+    }
+    // physical_effort stays time-resolved for workout-window intensity matching.
+    return {name:name,units:m.units,data:values.map(v=>({date:v.date,qty:v.qty}))};
   }).filter(m=>m.data.length);
   return {data:{metrics:metrics}};
 }
@@ -205,6 +265,13 @@ function readAiJobParts_(job,type){
 }
 function aiJobCompute_(job){
   const started=Date.now();
+  if(Number(job.data_version||1)<AI_JOB_DATA_VERSION_){
+    job.status='failed';job.stage='failed';job.error_code='JOB_RESTART_REQUIRED';
+    job.message='통계 선집계 최적화 적용 전 작업입니다. AI 분석을 새로 시작하세요.';
+    writeAiJob_(job);
+    console.warn(JSON.stringify({event:'ai_job_restart_required',job_id:job.job_id,data_version:job.data_version||1}));
+    return;
+  }
   const health=readAiJobParts_(job,'health'),fitness=readAiJobParts_(job,'fitness');
   const strength=readAiJobParts_(job,'strength'),nutrition=readAiJobParts_(job,'nutrition');
   console.log(JSON.stringify({event:'ai_compute_start',job_id:job.job_id,counts:job.counts}));
