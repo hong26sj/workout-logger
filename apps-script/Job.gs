@@ -3,7 +3,7 @@ const AI_JOB_PROPERTY_='WL_ACTIVE_AI_JOB_V1';
 const AI_JOB_FOLDER_='AnalysisJobs';
 const AI_JOB_BATCH_SIZE_=2; // Keep individual Drive operations small even for dense Health exports.
 const AI_JOB_TYPES_=['health','fitness','strength','nutrition'];
-const AI_JOB_DATA_VERSION_=2;
+const AI_JOB_DATA_VERSION_=3;
 const AI_JOB_STALE_MS_=30*60*1000;
 
 function readAiJob_(){
@@ -189,12 +189,28 @@ function compactAiHealthData_(source,from,to){
         return {date:formatIso_(new Date(Number(key))),Avg:x.sum/x.count,Min:x.min,Max:x.max};
       })};
     }
+    if(name==='physical_effort'){
+      // Physical Effort can be exported at very high frequency. One-minute averaging
+      // keeps workout-window intensity useful while preventing the compute stage from
+      // rebuilding tens of thousands of raw samples on every analysis request.
+      const buckets={};
+      values.forEach(v=>{
+        const t=parseDate_(v.date).getTime(),qty=Number(v.qty);
+        if(!isFinite(t)||!isFinite(qty))return;
+        const bucket=Math.floor(t/60000)*60000,key=String(bucket);
+        if(!buckets[key])buckets[key]={sum:0,count:0};
+        buckets[key].sum+=qty;buckets[key].count++;
+      });
+      return {name:name,units:m.units,data:Object.keys(buckets).sort((x,y)=>Number(x)-Number(y)).map(key=>{
+        const x=buckets[key];
+        return {date:formatIso_(new Date(Number(key))),qty:x.sum/x.count};
+      })};
+    }
     if(name==='sleep_analysis'){
       return {name:name,units:m.units,data:values.map(v=>({date:v.date,sleepStart:v.sleepStart,inBedStart:v.inBedStart,
         sleepEnd:v.sleepEnd,inBedEnd:v.inBedEnd,totalSleep:v.totalSleep,deep:v.deep,core:v.core,
         rem:v.rem,awake:v.awake,inBed:v.inBed,source:v.source}))};
     }
-    // physical_effort stays time-resolved for workout-window intensity matching.
     return {name:name,units:m.units,data:values.map(v=>({date:v.date,qty:v.qty}))};
   }).filter(m=>m.data.length);
   return {data:{metrics:metrics}};
@@ -272,6 +288,27 @@ function aiJobCompute_(job){
     console.warn(JSON.stringify({event:'ai_job_restart_required',job_id:job.job_id,data_version:job.data_version||1}));
     return;
   }
+  if(job.compute_started_at&&!job.stats_file_id){
+    // A normal compute call always advances to openai before returning. If the job
+    // comes back to compute with this marker, the prior Apps Script execution was
+    // interrupted (typically execution-time limit). Recover a persisted statistics
+    // file when possible; otherwise fail explicitly instead of recomputing forever.
+    const existingStats=DriveApp.getFolderById(job.folder_id).getFilesByName('statistics.json');
+    if(existingStats.hasNext()){
+      job.stats_file_id=existingStats.next().getId();
+      job.stage='openai';job.progress={step:'openai',done:0,total:1};
+      job.message='중단된 통계 계산 결과를 복구했습니다.';
+      writeAiJob_(job);
+      return;
+    }
+    job.status='failed';job.stage='failed';job.error_code='COMPUTE_INTERRUPTED';
+    job.message='통계 계산이 Apps Script 실행 중단으로 완료되지 않았습니다. 새 분석을 시작하세요.';
+    writeAiJob_(job);
+    console.warn(JSON.stringify({event:'ai_compute_interrupted',job_id:job.job_id,compute_started_at:job.compute_started_at}));
+    return;
+  }
+  job.compute_started_at=formatIso_(new Date());
+  writeAiJob_(job);
   const health=readAiJobParts_(job,'health'),fitness=readAiJobParts_(job,'fitness');
   const strength=readAiJobParts_(job,'strength'),nutrition=readAiJobParts_(job,'nutrition');
   console.log(JSON.stringify({event:'ai_compute_start',job_id:job.job_id,counts:job.counts}));
@@ -357,6 +394,7 @@ function stepAiJob_(jobId){
         /(?:서비스 오류|Service error|Drive|rate limit|invoked too many times|Internal error)/i.test(message);
       job.stage_error_attempts=(job.stage_error_attempts||0)+1;
       if(retryable&&job.stage_error_attempts<=3){
+        if(stage==='compute')job.compute_started_at=null;
         job.message='Drive 연결 오류로 현재 단계를 다시 시도합니다 ('+job.stage_error_attempts+'/3).';
         job.error_code='DRIVE_RETRY';
         writeAiJob_(job);
